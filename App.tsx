@@ -11,7 +11,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans relative">
-      {/* User Identity Badge */}
       <UserBadge />
       <main className="flex-1 relative overflow-hidden flex flex-col">
         {activeTab === TabView.BLUEPRINT && <div className="h-full overflow-y-auto"><Blueprint /></div>}
