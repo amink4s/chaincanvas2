@@ -26,7 +26,7 @@ const Blueprint: React.FC = () => {
               <Server className="w-5 h-5 text-blue-400" /> Backend (State Machine)
             </h3>
             <ul className="list-disc pl-5 space-y-2 text-slate-400 text-sm">
-              <li><strong>PostgreSQL DB:</strong> Stores active game state, history, and the `target_fid` (who is allowed to edit).</li>
+              <li><strong>PostgreSQL DB:</strong> Stores active game state, history, and the <code>target_fid</code> (who is allowed to edit).</li>
               <li><strong>Cron Job:</strong> Runs daily to spawn the initial image.</li>
               <li><strong>Webhook Receiver:</strong> Listens for Zora auction settlements to trigger the fund transfer logic.</li>
             </ul>
@@ -34,10 +34,10 @@ const Blueprint: React.FC = () => {
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Database className="w-5 h-5 text-green-400" /> Storage & AI
+              <Database className="w-5 h-5 text-green-400" /> Storage &amp; AI
             </h3>
             <ul className="list-disc pl-5 space-y-2 text-slate-400 text-sm">
-              <li><strong>Venice AI Proxy:</strong> A server-side route to hold the Venice API key. Frontend sends prompt -> Backend calls Venice -> Returns image.</li>
+              <li><strong>Venice AI Proxy:</strong> A server-side route to hold the Venice API key. Frontend sends prompt → Backend calls Venice → Returns image.</li>
               <li><strong>IPFS / Pinata:</strong> All generated images must be pinned to IPFS immediately so the final NFT metadata is valid.</li>
             </ul>
           </div>
@@ -57,11 +57,13 @@ const Blueprint: React.FC = () => {
               <p className="text-slate-400 text-sm mt-1">
                 <strong>Challenge:</strong> How to handle concurrency if the timer expires?
                 <br />
-                <strong>Solution:</strong> The database stores an `expiry_timestamp`. When a user attempts to load the "Edit" screen:
-                1. Server checks `Date.now() > expiry_timestamp`.
-                2. If true, the `target_fid` is set to `NULL` (wildcard mode).
-                3. The first person to successfully submit a generated image locks the turn.
+                <strong>Solution:</strong> The database stores an <code>expiry_timestamp</code>. When a user attempts to load the "Edit" screen:
               </p>
+              <ol className="list-decimal pl-5 text-slate-400 text-sm mt-2 space-y-1">
+                <li>Server checks <code>Date.now() &gt; expiry_timestamp</code>.</li>
+                <li>If true, the <code>target_fid</code> is set to <code>NULL</code> (wildcard mode).</li>
+                <li>The first person to successfully submit a generated image locks the turn.</li>
+              </ol>
             </div>
           </div>
 
@@ -83,19 +85,19 @@ const Blueprint: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex gap-4 items-start">
-            <div className="p-2 bg-slate-800 rounded-lg shrink-0 mt-1">
-              <Coins className="w-6 h-6 text-pink-400" />
+            <div className="flex gap-4 items-start">
+              <div className="p-2 bg-slate-800 rounded-lg shrink-0 mt-1">
+                <Coins className="w-6 h-6 text-pink-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white">Auction &amp; Recycling</h3>
+                <p className="text-slate-400 text-sm mt-1">
+                  After Turn 10, the "Edit" button becomes a "Bid" button.
+                  We trigger a Zora Create call. The funds go to a treasury wallet.
+                  Your backend monitors this wallet and uses a Swap API (like 0x or Uniswap) or a manual bridge to pay for the Venice API credits (if Venice accepts crypto, otherwise off-ramp).
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-white">Auction & Recycling</h3>
-              <p className="text-slate-400 text-sm mt-1">
-                After Turn 10, the "Edit" button becomes a "Bid" button.
-                We trigger a Zora Create call. The funds go to a treasury wallet.
-                Your backend monitors this wallet and uses a Swap API (like 0x or Uniswap) or a manual bridge to pay for the Venice API credits (if Venice accepts crypto, otherwise off-ramp).
-              </p>
-            </div>
-          </div>
         </div>
       </div>
     </div>
