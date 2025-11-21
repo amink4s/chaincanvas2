@@ -13,63 +13,56 @@ type Status =
 
 export function useFarcasterIdentity() {
   const [status, setStatus] = useState<Status>('idle');
-  const [token, setToken] = useState<string | null>(null);
   const [fid, setFid] = useState<number | null>(null);
   const [profile, setProfile] = useState<FarcasterUserProfile | null>(null);
-  const [debug, setDebug] = useState<string[]>([]);
-
-  function log(msg: string) {
-    setDebug(d => [...d.slice(-14), msg]);
-  }
+  const [attempts, setAttempts] = useState(0);
 
   useEffect(() => {
     async function init() {
       setStatus('initializing');
-      log('init: calling sdk.actions.ready()');
       try {
         await sdk.actions.ready();
         setStatus('ready');
-        log('ready acknowledged');
-      } catch (e) {
-        log('ready error: ' + (e as Error).message);
+      } catch {
+        setStatus('error');
+        return;
       }
-
-      log('requesting quickAuth token');
       try {
         const { token } = await sdk.quickAuth.getToken();
-        log('token received (length=' + token.length + ')');
-        setToken(token);
         setStatus('token');
         const payload = decodeJwt(token);
         if (payload?.sub && typeof payload.sub === 'number') {
           setFid(payload.sub);
-          log('decoded fid=' + payload.sub);
         } else {
-          log('decode failed: no numeric sub');
+          setStatus('error');
         }
-      } catch (e) {
-        log('quickAuth error: ' + (e as Error).message);
+      } catch {
         setStatus('error');
       }
     }
-
     init();
   }, []);
 
   useEffect(() => {
-    if (fid && !profile) {
-      log('fetching profile for fid=' + fid);
+    if (fid && (!profile || (profile.source !== 'neynar-single' && profile.source !== 'neynar-bulk'))) {
+      // Fetch or retry until we get a definitive neynar source or reach attempt cap.
       fetchUserProfile(fid).then(p => {
         if (p) {
           setProfile(p);
           setStatus('profile');
-          log('profile loaded username=' + p.username);
-        } else {
-          log('profile fetch returned null');
         }
       });
     }
-  }, [fid, profile]);
+  }, [fid, attempts]);
 
-  return { status, fid, token, profile, debug };
+  // Schedule auto-retry every 45s for up to 5 attempts if not a definitive neynar profile.
+  useEffect(() => {
+    if (!fid) return;
+    if (attempts >= 5) return;
+    if (profile && (profile.source === 'neynar-single' || profile.source === 'neynar-bulk')) return;
+    const handle = setTimeout(() => setAttempts(a => a + 1), 45000);
+    return () => clearTimeout(handle);
+  }, [fid, profile, attempts]);
+
+  return { status, fid, profile };
 }
