@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { GameState, MOCK_USERS, FarcasterUser } from '../types';
-import { getInitialState, simulateEdit, formatTimeLeft } from '../services/simulation';
+// import { getInitialState, simulateEdit, formatTimeLeft } from '../services/simulation';
+import { getInitialState, formatTimeLeft } from '../services/simulation';
+import { editImage } from '../services/venice';
 import { Timer, Send, UserPlus, RefreshCw, Camera, Loader2, Lock } from 'lucide-react';
 
 const GamePrototype: React.FC = () => {
@@ -23,7 +25,7 @@ const GamePrototype: React.FC = () => {
     if (!inputPrompt.trim()) return;
     
     setIsGenerating(true);
-    const newImageUrl = await simulateEdit(inputPrompt);
+    const newImageUrl = await editImage(inputPrompt, gameState.currentImage);
     
     setGameState(prev => ({
       ...prev,
