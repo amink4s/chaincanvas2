@@ -1,9 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GameState, MOCK_USERS } from '../types';
-import { getInitialState, formatTimeLeft } from '../services/simulation';
-import { editImage, getLastVeniceError, getLastVeniceDebug } from '../services/venice';
-import { saveTurn, updateTurnIpfs } from '../services/storage';
-import { searchFarcasterUsers, debounce, SearchUser } from '../services/userSearch';
 import {
   Timer,
   Send,
@@ -16,17 +11,30 @@ import {
   Search as SearchIcon,
   X
 } from 'lucide-react';
+import { editImage, getLastVeniceError, getLastVeniceDebug } from '../services/venice';
+import { searchFarcasterUsers, debounce, SearchUser } from '../services/userSearch';
 import { sdk } from '@farcaster/miniapp-sdk';
 
-const GAME_ID = 'daily-1'; // Placeholder until /api/game-state is wired.
-const MINI_APP_URL = 'https://chaincanvas-xi.vercel.app/'; // Public mini app URL (embed target)
+const MINI_APP_URL = 'https://chaincanvas-xi.vercel.app/';
+
+interface ServerState {
+  gameId: string;
+  game: any;
+  turns: any[];
+  callerFid: number | null;
+}
+
+function getAuthToken(): string | null {
+  return (window as any).QUICKAUTH_TOKEN || null;
+}
 
 const GamePrototype: React.FC = () => {
-  const [gameState, setGameState] = useState<GameState>(getInitialState());
+  const [serverState, setServerState] = useState<ServerState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [inputPrompt, setInputPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [timeLeft, setTimeLeft] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [debugMeta, setDebugMeta] = useState<any>(null);
@@ -34,17 +42,19 @@ const GamePrototype: React.FC = () => {
   const [ipfsStatus, setIpfsStatus] = useState<string | null>(null);
   const [pinning, setPinning] = useState(false);
   const [lastPinnedUrl, setLastPinnedUrl] = useState<string | null>(null);
+  const [lastPromptForCast, setLastPromptForCast] = useState<string>('');
 
-  // NEXT EDITOR SEARCH
+  // MISSING BEFORE: share modal state
+  const [showShareModal, setShowShareModal] = useState(false);
+
+  // Search
   const [nextEditorQuery, setNextEditorQuery] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [selectedNextUser, setSelectedNextUser] = useState<SearchUser | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // Debounced search function
   const debouncedSearch = useRef(
     debounce(async (q: string) => {
       if (!q.trim()) {
@@ -59,42 +69,78 @@ const GamePrototype: React.FC = () => {
     }, 300)
   ).current;
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTimeLeft(formatTimeLeft(gameState.deadline));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [gameState.deadline]);
+  async function loadServerState() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const token = getAuthToken();
+      const resp = await fetch('/api/game-state', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error || 'Failed to load game state');
+      setServerState(data);
+    } catch (e: any) {
+      setLoadError(e.message || 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  // Close dropdown on outside click
+  useEffect(() => { loadServerState(); }, []);
+
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
+    if (!nextEditorQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    debouncedSearch(nextEditorQuery);
+  }, [nextEditorQuery, debouncedSearch]);
+
+  useEffect(() => {
+    function outside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
       }
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('mousedown', outside);
+    return () => document.removeEventListener('mousedown', outside);
   }, []);
 
+  const currentImage = (() => {
+    if (!serverState) return '';
+    if (lastDataUrl) return lastDataUrl;
+    const turns = serverState.turns;
+    if (!turns.length) return serverState.game.seed_image_url;
+    return turns[turns.length - 1].image_url || serverState.game.seed_image_url;
+  })();
+
+  const currentPrompt = (() => {
+    if (!serverState) return '';
+    if (lastDataUrl) return inputPrompt;
+    const turns = serverState.turns;
+    if (!turns.length) return serverState.game.seed_prompt || '';
+    return turns[turns.length - 1].prompt_text || '';
+  })();
+
+  const myFid = serverState?.callerFid || null;
+  const isMyTurn = (() => {
+    if (!serverState || !myFid) return false;
+    return serverState.game.next_editor_fid === myFid;
+  })();
+
   const handleGenerate = async () => {
-    if (!inputPrompt.trim() || isGenerating) return;
+    if (!inputPrompt.trim() || isGenerating || !serverState || !isMyTurn) return;
     setErrorMsg(null);
     setShowDebug(false);
     setDebugMeta(null);
-    setLastDataUrl(null);
     setLastPinnedUrl(null);
     setIpfsStatus(null);
     setIsGenerating(true);
 
     try {
-      const dataUrl = await editImage(inputPrompt, gameState.currentImage, true);
+      const dataUrl = await editImage(inputPrompt, currentImage, true);
       setLastDataUrl(dataUrl);
-      setGameState(prev => ({
-        ...prev,
-        currentImage: dataUrl, // display the data URL
-        currentPrompt: inputPrompt
-      }));
     } catch (e: any) {
       const err = getLastVeniceError() || e.message || 'Unknown error';
       setErrorMsg(err);
@@ -105,7 +151,7 @@ const GamePrototype: React.FC = () => {
   };
 
   const pinToIpfs = async () => {
-    if (!lastDataUrl) return;
+    if (!lastDataUrl || !serverState) return;
     setPinning(true);
     setIpfsStatus(null);
     try {
@@ -114,9 +160,9 @@ const GamePrototype: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dataUrl: lastDataUrl,
-          prompt: gameState.currentPrompt,
-          gameId: GAME_ID,
-          turnNumber: gameState.turnCount
+          prompt: inputPrompt,
+          gameId: serverState.gameId,
+          turnNumber: serverState.game.current_turn
         })
       });
       const data = await resp.json();
@@ -125,7 +171,6 @@ const GamePrototype: React.FC = () => {
       } else {
         setIpfsStatus(`Pinned: ${data.ipfsCid}`);
         setLastPinnedUrl(data.gatewayUrl || null);
-        await updateTurnIpfs(GAME_ID, gameState.turnCount, data.ipfsCid, data.gatewayUrl);
       }
     } catch (e: any) {
       setIpfsStatus('Pin network error: ' + (e?.message || String(e)));
@@ -134,161 +179,109 @@ const GamePrototype: React.FC = () => {
     }
   };
 
-  // Editor selection search handler
-  useEffect(() => {
-    if (!nextEditorQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    debouncedSearch(nextEditorQuery);
-  }, [nextEditorQuery, debouncedSearch]);
-
-  const selectNextEditor = (user: SearchUser) => {
-    setSelectedNextUser(user);
-    setNextEditorQuery(user.username);
+  const selectNextEditor = (u: SearchUser) => {
+    setSelectedNextUser(u);
+    setNextEditorQuery(u.username);
     setDropdownOpen(false);
   };
 
-  const isMyTurn = gameState.nextEditor?.fid === 88; // Replace with actual QuickAuth fid later.
-
   const confirmTurn = async () => {
-    if (!selectedNextUser || !lastDataUrl) return;
-
-    // Record turn (local stub; replace with /api/submit-turn).
-    await saveTurn({
-      gameId: GAME_ID,
-      turnNumber: gameState.turnCount,
-      editorFid: 88, // Replace with real fid from QuickAuth
-      prompt: gameState.currentPrompt,
-      imageDataUrl: lastDataUrl,
-      createdAt: Date.now()
-    });
-
-    const turnData = {
-      turn: gameState.turnCount,
-      editor: MOCK_USERS[3],
-      image: gameState.currentImage,
-      prompt: gameState.currentPrompt
-    };
-
-    setGameState(prev => ({
-      ...prev,
-      history: [...prev.history, turnData],
-      turnCount: prev.turnCount + 1,
-      lastEditor: MOCK_USERS[3],
-      nextEditor: {
-        fid: selectedNextUser.fid,
-        username: selectedNextUser.username,
-        pfpUrl: selectedNextUser.pfpUrl || 'https://placehold.co/64x64?text=U'
-      },
-      deadline: Date.now() + 30 * 60 * 1000,
-      currentPrompt: ''
-    }));
-
-    setInputPrompt('');
-    setShowShareModal(true);
+    if (!selectedNextUser || !lastDataUrl || !serverState || !isMyTurn) return;
+    setLastPromptForCast(inputPrompt); // preserve before clearing
+    const token = getAuthToken();
+    try {
+      const resp = await fetch('/api/submit-turn', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          gameId: serverState.gameId,
+          passedToFid: selectedNextUser.fid,
+          prompt: inputPrompt,
+          imageDataUrl: lastDataUrl
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setErrorMsg(data?.error || 'Submit failed');
+        return;
+      }
+      setLastDataUrl(null);
+      setInputPrompt('');
+      await loadServerState();
+      setShowShareModal(true);
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Submit error');
+    }
   };
 
   const buildCastText = () => {
     if (!selectedNextUser) return '';
-    return `I just mutated the daily image with "${gameState.currentPrompt}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n${MINI_APP_URL}`;
+    return `I just mutated the daily image with "${lastPromptForCast}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n${MINI_APP_URL}`;
   };
 
-  // Compose cast with proper embed tuple types.
-  // Venice image should be pinned first for a stable URL; if not pinned fall back to mini app only.
   const composeCast = async () => {
     if (!selectedNextUser) return;
     const text = buildCastText();
-
-    // Ensure we have at least the mini app link embedded.
-    // If pinned image exists include both as a fixed-length tuple.
     let embeds: [string] | [string, string] | undefined;
-    if (lastPinnedUrl) {
-      embeds = [lastPinnedUrl, MINI_APP_URL] as [string, string];
-    } else {
-      embeds = [MINI_APP_URL]; // Single embed tuple.
-    }
-
+    if (lastPinnedUrl) embeds = [lastPinnedUrl, MINI_APP_URL];
+    else embeds = [MINI_APP_URL];
     try {
-      // Optional manifest signing (non-fatal if fails).
-      try {
-        await (sdk as any)?.experimental?.signManifest?.({
-          domain: window.location.hostname
-        });
-      } catch (e) {
-        // ignore
-      }
-
-      // Primary call
       await sdk.actions.composeCast?.({ text, embeds });
-
       setShowShareModal(false);
     } catch (e: any) {
-      console.error('ComposeCast error', e);
-      alert('Failed to open composer with prefilled content. Copy manually:\n\n' + text);
+      alert('Composer failed. Copy manually:\n\n' + text);
     }
   };
+
+  if (loading) return <div className="p-6 text-center text-slate-300"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-3" />Loading game…</div>;
+  if (loadError || !serverState) return <div className="p-6 text-center text-red-400">Load error: {loadError}</div>;
+
+  const turnCount = serverState.game.current_turn;
+  const maxTurns = serverState.game.max_turns;
+  const deadline = serverState.game.expiry_timestamp ? new Date(serverState.game.expiry_timestamp).getTime() : null;
+  const timeLeft = deadline ? formatTime(deadline) : 'Open';
+
+  function formatTime(deadlineMs: number) {
+    const diff = deadlineMs - Date.now();
+    if (diff <= 0) return 'Expired';
+    const m = Math.floor(diff / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    return `${m}m ${s}s`;
+  }
 
   return (
     <div className="h-full flex flex-col max-w-md mx-auto bg-black border-x border-slate-800 relative shadow-2xl overflow-y-auto">
       {/* Header */}
       <div className="bg-slate-900 p-4 flex justify-between items-center border-b border-slate-800">
         <div className="flex flex-col">
-          <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">
-            Round
-          </span>
-          <span className="text-xl font-black text-indigo-400">
-            {gameState.turnCount} / {gameState.maxTurns}
-          </span>
+          <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">Round</span>
+          <span className="text-xl font-black text-indigo-400">{turnCount} / {maxTurns}</span>
         </div>
         <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
-          <Timer
-            className={`w-4 h-4 ${
-              gameState.deadline && Date.now() > gameState.deadline
-                ? 'text-red-500'
-                : 'text-green-400'
-            }`}
-          />
+          <Timer className={`w-4 h-4 ${deadline && Date.now() > deadline ? 'text-red-500' : 'text-green-400'}`} />
           <span className="text-sm font-mono text-slate-200">{timeLeft}</span>
         </div>
       </div>
 
-      {/* Main */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* Image Stage */}
+        {/* Image */}
         <div className="relative rounded-xl overflow-hidden border-2 border-slate-700 shadow-lg bg-slate-900 aspect-square flex items-center justify-center">
-          <img
-            src={gameState.currentImage}
-            alt="Current State"
-            className="w-full h-full object-cover"
-          />
+          <img src={currentImage} alt="Current State" className="w-full h-full object-cover" />
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4">
             <p className="text-white text-sm font-medium line-clamp-2">
-              "{gameState.currentPrompt}"
+              "{currentPrompt || (lastDataUrl ? inputPrompt : '')}"
             </p>
-            <div className="flex items-center gap-2 mt-2">
-              <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[10px] font-bold">
-                {gameState.lastEditor
-                  ? gameState.lastEditor.username[0].toUpperCase()
-                  : 'S'}
-              </div>
-              <span className="text-xs text-slate-300">
-                {gameState.lastEditor
-                  ? `Edited by @${gameState.lastEditor.username}`
-                  : 'Seed Image'}
-              </span>
-            </div>
           </div>
         </div>
 
-        {/* Controls */}
         {isMyTurn ? (
           <div className="space-y-5">
-            {/* Step 1: Edit */}
+            {/* Step 1 */}
             <div className="space-y-2">
-              <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
-                1. Make your edit
-              </label>
+              <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">1. Make your edit</label>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -303,23 +296,16 @@ const GamePrototype: React.FC = () => {
                   disabled={isGenerating || !inputPrompt.trim()}
                   className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 rounded-lg flex items-center justify-center transition-all"
                 >
-                  {isGenerating ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-5 h-5" />
-                  )}
+                  {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
                 </button>
               </div>
               {errorMsg && (
                 <div className="text-xs bg-red-500/15 border border-red-600/40 text-red-300 rounded-md px-3 py-2 space-y-2">
                   <div className="flex items-center gap-2">
                     <Bug className="w-4 h-4" />
-                    <span>Venice error: {errorMsg}</span>
+                    <span>{errorMsg}</span>
                   </div>
-                  <button
-                    onClick={() => setShowDebug(d => !d)}
-                    className="text-[10px] underline text-red-200 hover:text-red-100"
-                  >
+                  <button onClick={() => setShowDebug(d => !d)} className="text-[10px] underline text-red-200 hover:text-red-100">
                     {showDebug ? 'Hide debug' : 'Show debug'}
                   </button>
                   {showDebug && debugMeta && (
@@ -339,20 +325,14 @@ const GamePrototype: React.FC = () => {
                     <CloudUpload className="w-4 h-4" />
                     {pinning ? 'Pinning...' : 'Pin to IPFS'}
                   </button>
-                  {ipfsStatus && (
-                    <span className="text-[10px] text-indigo-300">
-                      {ipfsStatus}
-                    </span>
-                  )}
+                  {ipfsStatus && <span className="text-[10px] text-indigo-300">{ipfsStatus}</span>}
                 </div>
               )}
             </div>
 
-            {/* Step 2: Pass the torch (Search box) */}
+            {/* Step 2 */}
             <div className="space-y-2" ref={dropdownRef}>
-              <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
-                2. Pass the torch
-              </label>
+              <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">2. Pass the torch</label>
               <div className="relative">
                 <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500">
                   <SearchIcon className="w-4 h-4 text-slate-400" />
@@ -361,7 +341,7 @@ const GamePrototype: React.FC = () => {
                     value={nextEditorQuery}
                     onChange={e => {
                       setNextEditorQuery(e.target.value);
-                      setSelectedNextUser(null); // Reset selection if query changes
+                      setSelectedNextUser(null);
                     }}
                     placeholder="Search Farcaster username..."
                     className="flex-1 bg-transparent text-sm text-white outline-none"
@@ -387,9 +367,7 @@ const GamePrototype: React.FC = () => {
                         key={u.fid}
                         onClick={() => selectNextEditor(u)}
                         className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          selectedNextUser?.fid === u.fid
-                            ? 'bg-indigo-600/20 text-white'
-                            : 'text-slate-300 hover:bg-slate-800'
+                          selectedNextUser?.fid === u.fid ? 'bg-indigo-600/20 text-white' : 'text-slate-300 hover:bg-slate-800'
                         }`}
                       >
                         <img
@@ -399,15 +377,9 @@ const GamePrototype: React.FC = () => {
                         />
                         <div className="flex flex-col">
                           <span className="font-semibold">@{u.username}</span>
-                          {u.displayName && (
-                            <span className="text-[10px] text-slate-400">
-                              {u.displayName}
-                            </span>
-                          )}
+                          {u.displayName && <span className="text-[10px] text-slate-400">{u.displayName}</span>}
                         </div>
-                        <span className="ml-auto text-[10px] text-slate-500">
-                          fid {u.fid}
-                        </span>
+                        <span className="ml-auto text-[10px] text-slate-500">fid {u.fid}</span>
                       </button>
                     ))}
                   </div>
@@ -425,7 +397,7 @@ const GamePrototype: React.FC = () => {
               </div>
             </div>
 
-            {/* Step 3: Finalize */}
+            {/* Step 3 */}
             <button
               onClick={confirmTurn}
               disabled={!selectedNextUser || !lastDataUrl || !inputPrompt.trim()}
@@ -441,20 +413,14 @@ const GamePrototype: React.FC = () => {
             </div>
             <div>
               <h3 className="text-lg font-bold text-white">Not Your Turn</h3>
-              <p className="text-slate-400 text-sm max-w-[200px] mx-auto mt-2">
-                Waiting for <span className="text-indigo-400">@{gameState.nextEditor?.username}</span> to make a move.
+              <p className="text-slate-400 text-sm max-w-[220px] mx-auto mt-2">
+                Waiting for the current editor to finish. (Server-controlled)
               </p>
             </div>
-            {gameState.deadline && Date.now() > gameState.deadline && (
-              <button className="mt-4 bg-red-500/20 text-red-400 border border-red-500/50 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-500/30 transition-all">
-                Steal Turn (Timer Expired)
-              </button>
-            )}
           </div>
         )}
       </div>
 
-      {/* Share Modal */}
       {showShareModal && selectedNextUser && (
         <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 space-y-6">
@@ -463,29 +429,25 @@ const GamePrototype: React.FC = () => {
                 <Camera className="w-6 h-6" />
               </div>
               <h3 className="text-xl font-bold text-white">Turn Complete!</h3>
-              <p className="text-slate-400 text-sm">
-                Compose a cast to notify @{selectedNextUser.username}.
-              </p>
+              <p className="text-slate-400 text-sm">Compose a cast to notify @{selectedNextUser.username}.</p>
             </div>
-
             <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
               <p className="text-slate-300 text-sm font-mono whitespace-pre-line">
-                {buildCastText()}
+                {`I just mutated the daily image with "${lastPromptForCast}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n${MINI_APP_URL}`}
               </p>
               <div className="mt-3 rounded-md overflow-hidden h-32 w-full bg-black">
                 <img
-                  src={gameState.currentImage}
+                  src={lastDataUrl || currentImage}
                   className="w-full h-full object-cover opacity-80"
                   alt="Turn Result"
                 />
               </div>
               {lastPinnedUrl && (
                 <div className="mt-2 text-[11px] text-slate-400">
-                  Image embed ready: {lastPinnedUrl}
+                  Image embed: {lastPinnedUrl}
                 </div>
               )}
             </div>
-
             <button
               onClick={composeCast}
               className="w-full bg-[#7C65C1] hover:bg-[#6952A3] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
