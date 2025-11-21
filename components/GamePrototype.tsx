@@ -28,11 +28,9 @@ function getAuthToken(): string | null {
   return (window as any).QUICKAUTH_TOKEN || null;
 }
 
-// Prefer server-reported fid; fall back to QuickAuth fid stored on window
 function getMyFidFromContext(serverCallerFid: number | null): number | null {
   if (typeof serverCallerFid === 'number') return serverCallerFid;
-  const w: any = window as any;
-  const fallback = w?.CURRENT_FID;
+  const fallback = (window as any).CURRENT_FID;
   if (fallback == null) return null;
   const n = Number(fallback);
   return Number.isFinite(n) ? n : null;
@@ -55,7 +53,6 @@ const GamePrototype: React.FC = () => {
   const [lastPromptForCast, setLastPromptForCast] = useState<string>('');
   const [showShareModal, setShowShareModal] = useState(false);
 
-  // Search
   const [nextEditorQuery, setNextEditorQuery] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
@@ -103,7 +100,17 @@ const GamePrototype: React.FC = () => {
     }
   }
 
+  // Initial load
   useEffect(() => { loadServerState(); }, []);
+
+  // Re-fetch when QuickAuth finishes (triggered externally)
+  useEffect(() => {
+    function onReady() {
+      loadServerState();
+    }
+    window.addEventListener('quickauth-ready', onReady);
+    return () => window.removeEventListener('quickauth-ready', onReady);
+  }, []);
 
   useEffect(() => {
     if (!nextEditorQuery.trim()) {
@@ -139,7 +146,6 @@ const GamePrototype: React.FC = () => {
     return turns[turns.length - 1].prompt_text || '';
   })();
 
-  // Robust turn ownership: coerce BIGINT string to number; fallback to window fid if server callerFid is null
   const myFid = getMyFidFromContext(serverState?.callerFid ?? null);
   const nextFid: number | null =
     serverState?.game?.next_editor_fid != null
@@ -148,14 +154,14 @@ const GamePrototype: React.FC = () => {
 
   const isMyTurn = Boolean(myFid != null && nextFid != null && myFid === nextFid);
 
-  // Quick debug to verify identity/turn logic
   if (typeof window !== 'undefined') {
     // eslint-disable-next-line no-console
     console.debug('turn debug', {
       myFid,
       nextFid,
       callerFid: serverState?.callerFid ?? null,
-      rawNext: serverState?.game?.next_editor_fid
+      rawNext: serverState?.game?.next_editor_fid,
+      tokenPresent: Boolean(getAuthToken())
     });
   }
 
@@ -191,8 +197,8 @@ const GamePrototype: React.FC = () => {
         body: JSON.stringify({
           dataUrl: lastDataUrl,
           prompt: inputPrompt,
-          gameId: serverState.gameId,
-          turnNumber: serverState.game.current_turn
+            gameId: serverState.gameId,
+            turnNumber: serverState.game.current_turn
         })
       });
       const data = await resp.json().catch(() => ({}));
@@ -235,7 +241,7 @@ const GamePrototype: React.FC = () => {
       });
       const text = await resp.text();
       let data: any = {};
-      try { data = JSON.parse(text); } catch { /* keep raw */ }
+      try { data = JSON.parse(text); } catch { /* ignore */ }
       if (!resp.ok) {
         setErrorMsg(data?.error || text.slice(0, 100) || 'Submit failed');
         return;
@@ -326,6 +332,12 @@ const GamePrototype: React.FC = () => {
           />
           <span className="text-sm font-mono text-slate-200">{timeLeft}</span>
         </div>
+      </div>
+
+      {/* Debug panel (remove later) */}
+      <div className="px-4 py-2 text-[11px] text-slate-400 bg-slate-900/60 border-b border-slate-800">
+        <div>myFid: {myFid ?? 'null'} | nextFid: {nextFid ?? 'null'} | isMyTurn: {String(isMyTurn)}</div>
+        <div>callerFid(from server): {serverState.callerFid ?? 'null'} | tokenPresent: {String(Boolean(getAuthToken()))}</div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
