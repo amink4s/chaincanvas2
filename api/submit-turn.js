@@ -11,8 +11,6 @@ export default async function handler(req, res) {
     if (!callerFid) {
       return respond(res, 401, { error: 'Unauthorized (missing or invalid token)' });
     }
-
-    // Ensure caller user exists
     await ensureUser(callerFid);
 
     const body = req.body || {};
@@ -24,7 +22,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Ensure next user exists (so FK won't fail when we update games)
     await ensureUser(Number(passedToFid));
 
     await assertTurnPermission(gameId, callerFid);

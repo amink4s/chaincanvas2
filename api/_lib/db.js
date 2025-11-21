@@ -5,8 +5,12 @@ let sqlClient = null;
 function getClient() {
   const env = (globalThis.process && globalThis.process.env) ? globalThis.process.env : {};
   const url = env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL not configured');
-  if (!sqlClient) sqlClient = neon(url);
+  if (!url) {
+    throw new Error('DATABASE_URL not configured');
+  }
+  if (!sqlClient) {
+    sqlClient = neon(url);
+  }
   return sqlClient;
 }
 
@@ -15,13 +19,30 @@ export async function query(strings, ...values) {
   return await client(strings, ...values);
 }
 
+export async function ensureUser(fid, username = null, displayName = null, pfpUrl = null) {
+  await query`
+    INSERT INTO users (fid, username, display_name, pfp_url, last_seen_at, profile_last_refreshed_at, created_at, updated_at)
+    VALUES (${fid}, ${username}, ${displayName}, ${pfpUrl}, NOW(), NOW(), NOW(), NOW())
+    ON CONFLICT (fid) DO UPDATE
+      SET username = COALESCE(EXCLUDED.username, users.username),
+          display_name = COALESCE(EXCLUDED.display_name, users.display_name),
+          pfp_url = COALESCE(EXCLUDED.pfp_url, users.pfp_url),
+          last_seen_at = NOW(),
+          profile_last_refreshed_at = NOW(),
+          updated_at = NOW();
+  `;
+}
+
 export async function getOrCreateTodayGame(seedImageUrl, seedPrompt, initialEditorFid) {
   const today = new Date().toISOString().slice(0, 10);
   const existing = await query`SELECT id FROM games WHERE day_date = ${today} LIMIT 1`;
   if (existing.length) return existing[0].id;
+
   const inserted = await query`
-    INSERT INTO games (day_date, seed_image_url, seed_prompt, status, current_turn, max_turns, expiry_timestamp, next_editor_fid)
-    VALUES (${today}, ${seedImageUrl}, ${seedPrompt}, 'active', 1, 10, NOW() + interval '30 minutes', ${initialEditorFid})
+    INSERT INTO games (day_date, seed_image_url, seed_prompt, status, current_turn, max_turns,
+                       expiry_timestamp, next_editor_fid)
+    VALUES (${today}, ${seedImageUrl}, ${seedPrompt}, 'active', 1, 10,
+            NOW() + interval '30 minutes', ${initialEditorFid})
     RETURNING id
   `;
   return inserted[0].id;
@@ -30,27 +51,38 @@ export async function getOrCreateTodayGame(seedImageUrl, seedPrompt, initialEdit
 export async function fetchGameState(gameId) {
   const gameRows = await query`SELECT * FROM games WHERE id = ${gameId} LIMIT 1`;
   if (!gameRows.length) return null;
-  const turns = await query`SELECT * FROM turns WHERE game_id = ${gameId} ORDER BY turn_number ASC`;
+  const turns = await query`
+    SELECT * FROM turns WHERE game_id = ${gameId} ORDER BY turn_number ASC
+  `;
   return { game: gameRows[0], turns };
 }
 
 export async function assertTurnPermission(gameId, fid) {
-  const rows = await query`SELECT next_editor_fid, status FROM games WHERE id = ${gameId} LIMIT 1`;
+  const rows = await query`
+    SELECT next_editor_fid, status, current_turn FROM games WHERE id = ${gameId} LIMIT 1
+  `;
   if (!rows.length) throw new Error('Game not found');
-  const { next_editor_fid, status } = rows[0];
+  const { next_editor_fid, status, current_turn } = rows[0];
   if (status !== 'active') throw new Error('Game not active');
+  // Allow initial editor if next_editor_fid still null and on first turn
+  if (next_editor_fid == null && current_turn === 1) return;
+  if (next_editor_fid == null) throw new Error('No editor assigned');
   if (next_editor_fid !== fid) throw new Error('Not your turn');
 }
 
 export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt, imageUrl }) {
-  const g = await query`SELECT current_turn, max_turns FROM games WHERE id = ${gameId} LIMIT 1`;
+  const g = await query`
+    SELECT current_turn, max_turns FROM games WHERE id = ${gameId} LIMIT 1
+  `;
   if (!g.length) throw new Error('Game not found');
   const { current_turn, max_turns } = g[0];
   if (current_turn > max_turns) throw new Error('Game already completed');
 
   await query`
-    INSERT INTO turns (game_id, turn_number, editor_fid, passed_to_fid, prompt_text, image_url, state, created_at)
-    VALUES (${gameId}, ${current_turn}, ${editorFid}, ${passedToFid}, ${prompt}, ${imageUrl}, 'finalized', NOW())
+    INSERT INTO turns (game_id, turn_number, editor_fid, passed_to_fid, prompt_text, image_url,
+                       state, created_at)
+    VALUES (${gameId}, ${current_turn}, ${editorFid}, ${passedToFid}, ${prompt}, ${imageUrl},
+            'finalized', NOW())
   `;
 
   await query`
@@ -64,31 +96,8 @@ export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt
 }
 
 export async function setTurnIpfs(gameId, turnNumber, cid) {
-  await query`UPDATE turns SET ipfs_cid = ${cid} WHERE game_id = ${gameId} AND turn_number = ${turnNumber}`;
-}
-export async function ensureUser(fid, username = null, displayName = null, pfpUrl = null) {
   await query`
-    INSERT INTO users (fid, username, display_name, pfp_url, last_seen_at, profile_last_refreshed_at, created_at, updated_at)
-    VALUES (${fid}, ${username}, ${displayName}, ${pfpUrl}, NOW(), NOW(), NOW(), NOW())
-    ON CONFLICT (fid) DO UPDATE
-      SET username = COALESCE(EXCLUDED.username, users.username),
-          display_name = COALESCE(EXCLUDED.display_name, users.display_name),
-          pfp_url = COALESCE(EXCLUDED.pfp_url, users.pfp_url),
-          last_seen_at = NOW(),
-          profile_last_refreshed_at = NOW(),
-          updated_at = NOW();
-  `;
-}
-export async function ensureUser(fid, username = null, displayName = null, pfpUrl = null) {
-  await query`
-    INSERT INTO users (fid, username, display_name, pfp_url, last_seen_at, profile_last_refreshed_at, created_at, updated_at)
-    VALUES (${fid}, ${username}, ${displayName}, ${pfpUrl}, NOW(), NOW(), NOW(), NOW())
-    ON CONFLICT (fid) DO UPDATE
-      SET username = COALESCE(EXCLUDED.username, users.username),
-          display_name = COALESCE(EXCLUDED.display_name, users.display_name),
-          pfp_url = COALESCE(EXCLUDED.pfp_url, users.pfp_url),
-          last_seen_at = NOW(),
-          profile_last_refreshed_at = NOW(),
-          updated_at = NOW();
+    UPDATE turns SET ipfs_cid = ${cid}
+    WHERE game_id = ${gameId} AND turn_number = ${turnNumber}
   `;
 }
