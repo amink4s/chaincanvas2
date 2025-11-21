@@ -4,17 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ChainReaction Blueprint</title>
-    <meta name="fc:miniapp" content='{ "version": "1", "imageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png", "button": { "title": "Play ChainReaction", "action": { "type": "launch_frame", "name": "ChainReaction", "url": "https://chaincanvas-xi.vercel.app/", "splashImageUrl": "https://chaincanvas-xi.vercel.app/splash.png", "splashBackgroundColor": "#0F172A" } } }' />    <script type="module" src="./index.tsx"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="fc:miniapp" content='{
+      "version": "1",
+      "imageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
+      "button": {
+        "title": "Play ChainReaction",
+        "action": {
+          "type": "launch_frame",
+          "name": "ChainReaction",
+          "url": "https://chaincanvas-xi.vercel.app/",
+          "splashImageUrl": "https://chaincanvas-xi.vercel.app/splash.png",
+          "splashBackgroundColor": "#0F172A"
+        }
+      }
+    }' />
     <style>
-      /* Custom Scrollbar for cyberpunk feel */
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: #1a1a1a; }
       ::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 4px; }
       ::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+      html, body, #root { height: 100%; }
     </style>
+    <script type="module" src="./index.tsx"></script>
   </head>
-  <body class="bg-slate-950 text-slate-100 antialiased overflow-hidden">
+  <body class="bg-slate-950 text-slate-100 antialiased">
     <div id="root"></div>
   </body>
 </html>
