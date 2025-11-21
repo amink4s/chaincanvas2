@@ -22,7 +22,6 @@ export default async function handler(req, res) {
     }
 
     await assertTurnPermission(gameId, callerFid);
-
     await insertTurnAndPass({
       gameId,
       editorFid: callerFid,

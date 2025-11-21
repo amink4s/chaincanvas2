@@ -15,21 +15,14 @@ function getClient() {
 }
 
 export async function query(strings, ...values) {
-  try {
-    const client = getClient();
-    const result = await client(strings, ...values);
-    return result;
-  } catch (e) {
-    console.error('[DB] Query error:', e?.message || e);
-    throw e;
-  }
+  const client = getClient();
+  return await client(strings, ...values);
 }
 
 export async function getOrCreateTodayGame(seedImageUrl, seedPrompt, initialEditorFid) {
   const today = new Date().toISOString().slice(0, 10);
   const existing = await query`SELECT id FROM games WHERE day_date = ${today} LIMIT 1`;
   if (existing.length) return existing[0].id;
-
   const inserted = await query`
     INSERT INTO games (day_date, seed_image_url, seed_prompt, status, current_turn, max_turns, expiry_timestamp, next_editor_fid)
     VALUES (${today}, ${seedImageUrl}, ${seedPrompt}, 'active', 1, 10, NOW() + interval '30 minutes', ${initialEditorFid})
