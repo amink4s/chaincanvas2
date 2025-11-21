@@ -7,7 +7,6 @@ export interface FarcasterUserProfile {
 export async function fetchUserProfile(fid: number): Promise<FarcasterUserProfile | null> {
   const apiKey = import.meta.env.VITE_NEYNAR_API_KEY;
   if (!apiKey) {
-    // Mock profile if Neynar key missing
     return {
       fid,
       username: `fid_${fid}`,
@@ -20,17 +19,30 @@ export async function fetchUserProfile(fid: number): Promise<FarcasterUserProfil
     });
     if (!resp.ok) {
       console.error('Neynar user fetch failed', resp.status);
-      return null;
+      return {
+        fid,
+        username: `fid_${fid}`,
+        pfpUrl: 'https://placehold.co/64x64?text=User'
+      };
     }
     const data = await resp.json();
     const user = data?.result?.user;
+    const rawUsername = user?.username || `fid_${fid}`;
+    const cleanedUsername = rawUsername.startsWith('@') ? rawUsername.slice(1) : rawUsername;
+    const pfp = user?.pfp?.url && user.pfp.url.trim() !== '' 
+      ? user.pfp.url 
+      : 'https://placehold.co/64x64?text=User';
     return {
       fid,
-      username: user?.username || `fid_${fid}`,
-      pfpUrl: user?.pfp?.url || 'https://placehold.co/64x64?text=User'
+      username: cleanedUsername,
+      pfpUrl: pfp
     };
   } catch (e) {
     console.error('Profile fetch error', e);
-    return null;
+    return {
+      fid,
+      username: `fid_${fid}`,
+      pfpUrl: 'https://placehold.co/64x64?text=User'
+    };
   }
 }

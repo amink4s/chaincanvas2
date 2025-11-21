@@ -1,7 +1,7 @@
 import React from 'react';
 import { useFarcasterIdentity } from '../hooks/useFarcasterIdentity';
 
-const labelMap: Record<string, string> = {
+const statusLabel: Record<string,string> = {
   idle: 'Idle',
   initializing: 'Auth…',
   ready: 'Ready',
@@ -11,14 +11,14 @@ const labelMap: Record<string, string> = {
 };
 
 const UserBadge: React.FC = () => {
-  const { status, fid, profile, debug } = useFarcasterIdentity();
+  const { status, fid, profile } = useFarcasterIdentity();
 
   return (
-    <div className="fixed top-2 left-2 z-50 flex flex-col gap-2 max-w-[220px]">
+    <div className="fixed top-2 left-2 z-50">
       <div className="flex items-center gap-2 bg-slate-800/80 backdrop-blur px-3 py-2 rounded-lg border border-indigo-500/40 shadow-sm min-h-[44px]">
         {!profile && (
           <span className="text-[10px] text-slate-300">
-            {labelMap[status] || status}
+            {statusLabel[status] || status}
           </span>
         )}
         {profile && (
@@ -36,12 +36,6 @@ const UserBadge: React.FC = () => {
             </div>
           </>
         )}
-      </div>
-      <div className="bg-black/60 border border-slate-700 rounded-md p-2">
-        <div className="text-[9px] font-mono text-indigo-300 mb-1">Debug:</div>
-        <ul className="text-[9px] font-mono text-slate-300 space-y-[2px] max-h-32 overflow-auto">
-          {debug.map((d,i) => <li key={i}>{d}</li>)}
-        </ul>
       </div>
     </div>
   );
