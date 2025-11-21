@@ -1,4 +1,4 @@
-import { fetchGameState, assertTurnPermission, insertTurnAndPass } from './_lib/db.js';
+import { fetchGameState, assertTurnPermission, insertTurnAndPass, ensureUser } from './_lib/db.js';
 import { extractFidFromAuthHeader } from './_lib/auth.js';
 
 export default async function handler(req, res) {
@@ -12,13 +12,23 @@ export default async function handler(req, res) {
       return respond(res, 401, { error: 'Unauthorized (missing or invalid token)' });
     }
 
+    // Ensure caller user exists
+    await ensureUser(callerFid);
+
     const body = req.body || {};
     const { gameId, passedToFid, prompt, imageDataUrl } = body;
+
     if (!gameId || !passedToFid || !prompt || !imageDataUrl) {
-      return respond(res, 400, { error: 'Missing required fields (gameId, passedToFid, prompt, imageDataUrl)' });
+      return respond(res, 400, {
+        error: 'Missing required fields (gameId, passedToFid, prompt, imageDataUrl)'
+      });
     }
 
+    // Ensure next user exists (so FK won't fail when we update games)
+    await ensureUser(Number(passedToFid));
+
     await assertTurnPermission(gameId, callerFid);
+
     await insertTurnAndPass({
       gameId,
       editorFid: callerFid,
