@@ -10,13 +10,12 @@ export default async function handler(req: any, res: any) {
       return respond(res, 405, { error: 'Method Not Allowed' });
     }
 
-    const callerFid = extractFidFromAuthHeader(req);
+    const callerFid = extractFidFromAuthHeader(req) || null;
 
-    // Create or fetch today’s game (initial next editor = caller if available)
     const gameId = await getOrCreateTodayGame(
       DEFAULT_SEED_IMAGE,
       DEFAULT_SEED_PROMPT,
-      callerFid || null
+      callerFid
     );
 
     const state = await fetchGameState(gameId);

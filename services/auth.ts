@@ -3,19 +3,28 @@ interface DecodedQuickAuth {
   [k: string]: any;
 }
 
-/**
- * Convert a base64url segment to standard base64 safely.
- */
 function base64UrlToBase64(segment: string): string {
   let s = segment.replace(/-/g, '+').replace(/_/g, '/');
   const pad = s.length % 4;
   if (pad === 2) s += '==';
   else if (pad === 3) s += '=';
-  else if (pad === 1) {
-    // Invalid padding length
-    throw new Error('Invalid base64url segment length');
-  }
+  else if (pad === 1) throw new Error('Invalid base64url segment length');
   return s;
+}
+
+// Edge-safe base64 decode: prefer atob, fallback to Buffer if available
+function decodeBase64ToString(b64: string): string {
+  try {
+    if (typeof atob === 'function') {
+      // atob returns binary string; convert to UTF-8
+      const bin = atob(b64);
+      const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+  } catch {}
+  // Fallback for Node
+  // eslint-disable-next-line no-undef
+  return Buffer.from(b64, 'base64').toString('utf-8');
 }
 
 export function decodeQuickAuthJwt(jwt: string): DecodedQuickAuth | null {
@@ -23,7 +32,7 @@ export function decodeQuickAuthJwt(jwt: string): DecodedQuickAuth | null {
     const parts = jwt.split('.');
     if (parts.length !== 3) return null;
     const payloadB64 = base64UrlToBase64(parts[1]);
-    const json = Buffer.from(payloadB64, 'base64').toString('utf-8');
+    const json = decodeBase64ToString(payloadB64);
     const payload = JSON.parse(json);
     return payload;
   } catch (e: any) {
@@ -32,9 +41,6 @@ export function decodeQuickAuthJwt(jwt: string): DecodedQuickAuth | null {
   }
 }
 
-/**
- * Extract the fid (sub) from Authorization: Bearer <token>
- */
 export function extractFidFromAuthHeader(req: any): number | null {
   try {
     const auth = req.headers?.authorization || '';

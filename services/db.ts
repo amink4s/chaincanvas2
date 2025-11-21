@@ -1,19 +1,31 @@
 import { neon } from '@neondatabase/serverless';
 
-const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
-
-export async function query<T = any>(strings: TemplateStringsArray, ...values: any[]): Promise<T[]> {
-  if (!sql) throw new Error('DATABASE_URL not configured');
-  return await (sql as any)(strings, ...values);
+let cachedSql: any = null;
+function getSql() {
+  // Avoid touching process at module import time (Edge safety)
+  const env = (globalThis as any)?.process?.env;
+  const url: string | undefined = env?.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL not configured');
+  if (!cachedSql) cachedSql = neon(url);
+  return cachedSql;
 }
 
-// Get or create today's game, ensure next_editor_fid is populated.
+export async function query<T = any>(strings: TemplateStringsArray, ...values: any[]): Promise<T[]> {
+  try {
+    const sql = getSql();
+    const result = await (sql as any)(strings, ...values);
+    return result as T[];
+  } catch (e: any) {
+    console.error('[DB] Query error:', e?.message || e);
+    throw e;
+  }
+}
+
 export async function getOrCreateTodayGame(seedImageUrl: string, seedPrompt: string, initialEditorFid: number | null) {
   const today = new Date().toISOString().slice(0, 10);
   const existing = await query<{ id: string }>`SELECT id FROM games WHERE day_date = ${today} LIMIT 1`;
-  if (existing.length) {
-    return existing[0].id;
-  }
+  if (existing.length) return existing[0].id;
+
   const inserted = await query<{ id: string }>`
     INSERT INTO games (day_date, seed_image_url, seed_prompt, status, current_turn, max_turns, expiry_timestamp, next_editor_fid)
     VALUES (${today}, ${seedImageUrl}, ${seedPrompt}, 'active', 1, 10, NOW() + interval '30 minutes', ${initialEditorFid})
@@ -29,7 +41,6 @@ export async function fetchGameState(gameId: string) {
   return { game: gameRows[0], turns };
 }
 
-// Ensure the caller is allowed to edit now.
 export async function assertTurnPermission(gameId: string, fid: number): Promise<void> {
   const rows = await query<any>`SELECT next_editor_fid, status FROM games WHERE id = ${gameId} LIMIT 1`;
   if (!rows.length) throw new Error('Game not found');
@@ -38,7 +49,6 @@ export async function assertTurnPermission(gameId: string, fid: number): Promise
   if (next_editor_fid !== fid) throw new Error('Not your turn');
 }
 
-// Insert finalized turn and set next_editor_fid for next user.
 export async function insertTurnAndPass(params: {
   gameId: string;
   editorFid: number;
@@ -49,8 +59,6 @@ export async function insertTurnAndPass(params: {
   veniceResponse?: any;
 }) {
   const { gameId, editorFid, passedToFid, prompt, imageUrl, veniceRequest, veniceResponse } = params;
-
-  // Load current turn number
   const g = await query<any>`SELECT current_turn, max_turns FROM games WHERE id = ${gameId} LIMIT 1`;
   if (!g.length) throw new Error('Game not found');
   const { current_turn, max_turns } = g[0];
@@ -67,7 +75,6 @@ export async function insertTurnAndPass(params: {
     )
   `;
 
-  // Advance game + set next editor
   await query`
     UPDATE games
     SET current_turn = current_turn + 1,
@@ -80,7 +87,8 @@ export async function insertTurnAndPass(params: {
 
 export async function setTurnIpfs(gameId: string, turnNumber: number, cid: string) {
   await query`
-    UPDATE turns SET ipfs_cid = ${cid}
+    UPDATE turns
+    SET ipfs_cid = ${cid}
     WHERE game_id = ${gameId} AND turn_number = ${turnNumber}
   `;
 }

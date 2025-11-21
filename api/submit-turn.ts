@@ -21,7 +21,6 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // Ensure it's the caller's turn
     await assertTurnPermission(gameId, callerFid);
 
     await insertTurnAndPass({
@@ -33,17 +32,10 @@ export default async function handler(req: any, res: any) {
     });
 
     const updated = await fetchGameState(gameId);
-    return respond(res, 200, {
-      ok: true,
-      game: updated?.game,
-      turns: updated?.turns
-    });
+    return respond(res, 200, { ok: true, game: updated?.game, turns: updated?.turns });
   } catch (e: any) {
     console.error('[api/submit-turn] Unexpected error:', e?.message || e);
-    return respond(res, 500, {
-      error: 'Internal server error',
-      detail: e?.message || String(e)
-    });
+    return respond(res, 500, { error: 'Internal server error', detail: e?.message || String(e) });
   }
 }
 
