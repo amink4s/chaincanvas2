@@ -1,38 +1,49 @@
-// Finalize a turn and pass to next editor.
-// POST { gameId, editorFid, passedToFid, prompt, imageDataUrl }
-import { fetchGameState, insertTurn } from '../services/db';
+import { fetchGameState, assertTurnPermission, insertTurnAndPass } from '../services/db';
+import { extractFidFromAuthHeader } from '../services/auth';
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    return respond(res, 405, { error: 'Method Not Allowed' });
-  }
-
   try {
-    const body = req.body || {};
-    const { gameId, editorFid, passedToFid, prompt, imageDataUrl } = body;
-
-    if (!gameId || !editorFid || !prompt || !imageDataUrl) {
-      return respond(res, 400, { error: 'Missing required fields (gameId, editorFid, prompt, imageDataUrl)' });
+    if (req.method !== 'POST') {
+      return respond(res, 405, { error: 'Method Not Allowed' });
     }
 
-    const state = await fetchGameState(gameId);
-    if (!state) return respond(res, 404, { error: 'Game not found' });
+    const callerFid = extractFidFromAuthHeader(req);
+    if (!callerFid) {
+      return respond(res, 401, { error: 'Unauthorized (missing or invalid token)' });
+    }
 
-    const turnNumber = state.game.current_turn;
+    const body = req.body || {};
+    const { gameId, passedToFid, prompt, imageDataUrl } = body;
 
-    await insertTurn({
+    if (!gameId || !passedToFid || !prompt || !imageDataUrl) {
+      return respond(res, 400, {
+        error: 'Missing required fields (gameId, passedToFid, prompt, imageDataUrl)'
+      });
+    }
+
+    // Ensure it's the caller's turn
+    await assertTurnPermission(gameId, callerFid);
+
+    await insertTurnAndPass({
       gameId,
-      turnNumber,
-      editorFid: Number(editorFid),
-      passedToFid: passedToFid ? Number(passedToFid) : null,
+      editorFid: callerFid,
+      passedToFid: Number(passedToFid),
       prompt,
       imageUrl: imageDataUrl
     });
 
     const updated = await fetchGameState(gameId);
-    return respond(res, 200, { ok: true, game: updated?.game, turns: updated?.turns });
+    return respond(res, 200, {
+      ok: true,
+      game: updated?.game,
+      turns: updated?.turns
+    });
   } catch (e: any) {
-    return respond(res, 500, { error: e?.message || 'Unknown error' });
+    console.error('[api/submit-turn] Unexpected error:', e?.message || e);
+    return respond(res, 500, {
+      error: 'Internal server error',
+      detail: e?.message || String(e)
+    });
   }
 }
 

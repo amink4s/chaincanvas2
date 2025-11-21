@@ -43,8 +43,6 @@ const GamePrototype: React.FC = () => {
   const [pinning, setPinning] = useState(false);
   const [lastPinnedUrl, setLastPinnedUrl] = useState<string | null>(null);
   const [lastPromptForCast, setLastPromptForCast] = useState<string>('');
-
-  // MISSING BEFORE: share modal state
   const [showShareModal, setShowShareModal] = useState(false);
 
   // Search
@@ -77,8 +75,16 @@ const GamePrototype: React.FC = () => {
       const resp = await fetch('/api/game-state', {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || 'Failed to load game state');
+      const text = await resp.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Non-JSON response: ${text.slice(0, 120)}`);
+      }
+      if (!resp.ok) {
+        throw new Error(data?.error || 'Failed to load game state');
+      }
       setServerState(data);
     } catch (e: any) {
       setLoadError(e.message || 'Unknown error');
@@ -165,7 +171,7 @@ const GamePrototype: React.FC = () => {
           turnNumber: serverState.game.current_turn
         })
       });
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         setIpfsStatus(`Pin failed: ${data?.error || resp.status}`);
       } else {
@@ -187,7 +193,7 @@ const GamePrototype: React.FC = () => {
 
   const confirmTurn = async () => {
     if (!selectedNextUser || !lastDataUrl || !serverState || !isMyTurn) return;
-    setLastPromptForCast(inputPrompt); // preserve before clearing
+    setLastPromptForCast(inputPrompt);
     const token = getAuthToken();
     try {
       const resp = await fetch('/api/submit-turn', {
@@ -203,9 +209,11 @@ const GamePrototype: React.FC = () => {
           imageDataUrl: lastDataUrl
         })
       });
-      const data = await resp.json();
+      const text = await resp.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch { /* keep raw */ }
       if (!resp.ok) {
-        setErrorMsg(data?.error || 'Submit failed');
+        setErrorMsg(data?.error || text.slice(0, 100) || 'Submit failed');
         return;
       }
       setLastDataUrl(null);
@@ -231,17 +239,39 @@ const GamePrototype: React.FC = () => {
     try {
       await sdk.actions.composeCast?.({ text, embeds });
       setShowShareModal(false);
-    } catch (e: any) {
+    } catch {
       alert('Composer failed. Copy manually:\n\n' + text);
     }
   };
 
-  if (loading) return <div className="p-6 text-center text-slate-300"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-3" />Loading game…</div>;
-  if (loadError || !serverState) return <div className="p-6 text-center text-red-400">Load error: {loadError}</div>;
+  if (loading)
+    return (
+      <div className="p-6 text-center text-slate-300">
+        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3" />
+        Loading game…
+      </div>
+    );
+
+  if (loadError || !serverState)
+    return (
+      <div className="p-6 text-center text-red-400">
+        Load error: {loadError}
+        <div>
+          <button
+            onClick={loadServerState}
+            className="mt-4 px-4 py-2 bg-slate-700 rounded text-sm text-white"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
 
   const turnCount = serverState.game.current_turn;
   const maxTurns = serverState.game.max_turns;
-  const deadline = serverState.game.expiry_timestamp ? new Date(serverState.game.expiry_timestamp).getTime() : null;
+  const deadline = serverState.game.expiry_timestamp
+    ? new Date(serverState.game.expiry_timestamp).getTime()
+    : null;
   const timeLeft = deadline ? formatTime(deadline) : 'Open';
 
   function formatTime(deadlineMs: number) {
@@ -257,11 +287,19 @@ const GamePrototype: React.FC = () => {
       {/* Header */}
       <div className="bg-slate-900 p-4 flex justify-between items-center border-b border-slate-800">
         <div className="flex flex-col">
-          <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">Round</span>
-          <span className="text-xl font-black text-indigo-400">{turnCount} / {maxTurns}</span>
+          <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">
+            Round
+          </span>
+          <span className="text-xl font-black text-indigo-400">
+            {turnCount} / {maxTurns}
+          </span>
         </div>
         <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
-          <Timer className={`w-4 h-4 ${deadline && Date.now() > deadline ? 'text-red-500' : 'text-green-400'}`} />
+          <Timer
+            className={`w-4 h-4 ${
+              deadline && Date.now() > deadline ? 'text-red-500' : 'text-green-400'
+            }`}
+          />
           <span className="text-sm font-mono text-slate-200">{timeLeft}</span>
         </div>
       </div>
@@ -281,7 +319,9 @@ const GamePrototype: React.FC = () => {
           <div className="space-y-5">
             {/* Step 1 */}
             <div className="space-y-2">
-              <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">1. Make your edit</label>
+              <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
+                1. Make your edit
+              </label>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -305,7 +345,10 @@ const GamePrototype: React.FC = () => {
                     <Bug className="w-4 h-4" />
                     <span>{errorMsg}</span>
                   </div>
-                  <button onClick={() => setShowDebug(d => !d)} className="text-[10px] underline text-red-200 hover:text-red-100">
+                  <button
+                    onClick={() => setShowDebug(d => !d)}
+                    className="text-[10px] underline text-red-200 hover:text-red-100"
+                  >
                     {showDebug ? 'Hide debug' : 'Show debug'}
                   </button>
                   {showDebug && debugMeta && (
@@ -325,14 +368,20 @@ const GamePrototype: React.FC = () => {
                     <CloudUpload className="w-4 h-4" />
                     {pinning ? 'Pinning...' : 'Pin to IPFS'}
                   </button>
-                  {ipfsStatus && <span className="text-[10px] text-indigo-300">{ipfsStatus}</span>}
+                  {ipfsStatus && (
+                    <span className="text-[10px] text-indigo-300">
+                      {ipfsStatus}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
 
             {/* Step 2 */}
             <div className="space-y-2" ref={dropdownRef}>
-              <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">2. Pass the torch</label>
+              <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
+                2. Pass the torch
+              </label>
               <div className="relative">
                 <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500">
                   <SearchIcon className="w-4 h-4 text-slate-400" />
@@ -367,7 +416,9 @@ const GamePrototype: React.FC = () => {
                         key={u.fid}
                         onClick={() => selectNextEditor(u)}
                         className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          selectedNextUser?.fid === u.fid ? 'bg-indigo-600/20 text-white' : 'text-slate-300 hover:bg-slate-800'
+                          selectedNextUser?.fid === u.fid
+                            ? 'bg-indigo-600/20 text-white'
+                            : 'text-slate-300 hover:bg-slate-800'
                         }`}
                       >
                         <img
@@ -377,7 +428,9 @@ const GamePrototype: React.FC = () => {
                         />
                         <div className="flex flex-col">
                           <span className="font-semibold">@{u.username}</span>
-                          {u.displayName && <span className="text-[10px] text-slate-400">{u.displayName}</span>}
+                          {u.displayName && (
+                            <span className="text-[10px] text-slate-400">{u.displayName}</span>
+                          )}
                         </div>
                         <span className="ml-auto text-[10px] text-slate-500">fid {u.fid}</span>
                       </button>

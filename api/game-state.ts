@@ -9,20 +9,33 @@ export default async function handler(req: any, res: any) {
     if (req.method !== 'GET') {
       return respond(res, 405, { error: 'Method Not Allowed' });
     }
-    const callerFid = extractFidFromAuthHeader(req);
-    // Caller fid can be null for viewing; initial creator set if game is new.
-    const gameId = await getOrCreateTodayGame(DEFAULT_SEED_IMAGE, DEFAULT_SEED_PROMPT, callerFid || null);
-    const state = await fetchGameState(gameId);
-    if (!state) return respond(res, 500, { error: 'Failed to load state' });
 
-    respond(res, 200, {
+    const callerFid = extractFidFromAuthHeader(req);
+
+    // Create or fetch today’s game (initial next editor = caller if available)
+    const gameId = await getOrCreateTodayGame(
+      DEFAULT_SEED_IMAGE,
+      DEFAULT_SEED_PROMPT,
+      callerFid || null
+    );
+
+    const state = await fetchGameState(gameId);
+    if (!state) {
+      return respond(res, 500, { error: 'Failed to load state' });
+    }
+
+    return respond(res, 200, {
       gameId,
       game: state.game,
       turns: state.turns,
       callerFid
     });
   } catch (e: any) {
-    respond(res, 500, { error: e?.message || 'Unknown error' });
+    console.error('[api/game-state] Unexpected error:', e?.message || e);
+    return respond(res, 500, {
+      error: 'Internal server error',
+      detail: e?.message || String(e)
+    });
   }
 }
 

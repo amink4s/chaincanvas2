@@ -2,19 +2,26 @@ import { fetchGameState, assertTurnPermission, insertTurnAndPass } from '../serv
 import { extractFidFromAuthHeader } from '../services/auth';
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    return respond(res, 405, { error: 'Method Not Allowed' });
-  }
   try {
+    if (req.method !== 'POST') {
+      return respond(res, 405, { error: 'Method Not Allowed' });
+    }
+
     const callerFid = extractFidFromAuthHeader(req);
-    if (!callerFid) return respond(res, 401, { error: 'Unauthorized (missing QuickAuth token)' });
+    if (!callerFid) {
+      return respond(res, 401, { error: 'Unauthorized (missing or invalid token)' });
+    }
 
     const body = req.body || {};
     const { gameId, passedToFid, prompt, imageDataUrl } = body;
+
     if (!gameId || !passedToFid || !prompt || !imageDataUrl) {
-      return respond(res, 400, { error: 'Missing required fields (gameId, passedToFid, prompt, imageDataUrl)' });
+      return respond(res, 400, {
+        error: 'Missing required fields (gameId, passedToFid, prompt, imageDataUrl)'
+      });
     }
 
+    // Ensure it's the caller's turn
     await assertTurnPermission(gameId, callerFid);
 
     await insertTurnAndPass({
@@ -26,9 +33,17 @@ export default async function handler(req: any, res: any) {
     });
 
     const updated = await fetchGameState(gameId);
-    respond(res, 200, { ok: true, game: updated?.game, turns: updated?.turns });
+    return respond(res, 200, {
+      ok: true,
+      game: updated?.game,
+      turns: updated?.turns
+    });
   } catch (e: any) {
-    respond(res, 500, { error: e?.message || 'Unknown error' });
+    console.error('[api/submit-turn] Unexpected error:', e?.message || e);
+    return respond(res, 500, {
+      error: 'Internal server error',
+      detail: e?.message || String(e)
+    });
   }
 }
 
