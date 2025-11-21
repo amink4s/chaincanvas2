@@ -1,7 +1,7 @@
-import { fetchGameState, assertTurnPermission, insertTurnAndPass } from './_lib/db';
-import { extractFidFromAuthHeader } from './_lib/auth';
+import { fetchGameState, assertTurnPermission, insertTurnAndPass } from './_lib/db.js';
+import { extractFidFromAuthHeader } from './_lib/auth.js';
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
       return respond(res, 405, { error: 'Method Not Allowed' });
@@ -33,13 +33,13 @@ export default async function handler(req: any, res: any) {
 
     const updated = await fetchGameState(gameId);
     return respond(res, 200, { ok: true, game: updated?.game, turns: updated?.turns });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[api/submit-turn] Unexpected error:', e?.message || e);
     return respond(res, 500, { error: 'Internal server error', detail: e?.message || String(e) });
   }
 }
 
-function respond(res: any, status: number, body: any) {
+function respond(res, status, body) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify(body));

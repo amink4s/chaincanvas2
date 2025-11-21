@@ -18,5 +18,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["./env.d.ts", "./**/*.ts", "./**/*.tsx"]
+  "include": ["./env.d.ts", "./**/*.ts", "./**/*.tsx", "api/_lib/db.js", "api/_lib/db-health.js", "api/_lib/auth.js", "api/submit-turn.js", "api/game-state.js"]
 }

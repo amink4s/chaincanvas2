@@ -1,10 +1,10 @@
 import { neon } from '@neondatabase/serverless';
 
-let sqlClient: any = null;
+let sqlClient = null;
 
 function getClient() {
-  const env = (globalThis as any)?.process?.env;
-  const url: string | undefined = env?.DATABASE_URL;
+  const env = (globalThis.process && globalThis.process.env) ? globalThis.process.env : {};
+  const url = env.DATABASE_URL;
   if (!url) {
     throw new Error('DATABASE_URL not configured');
   }
@@ -14,32 +14,23 @@ function getClient() {
   return sqlClient;
 }
 
-export async function query<T = any>(
-  strings: TemplateStringsArray,
-  ...values: any[]
-): Promise<T[]> {
+export async function query(strings, ...values) {
   try {
     const client = getClient();
-    const result = await (client as any)(strings, ...values);
-    return result as T[];
-  } catch (e: any) {
+    const result = await client(strings, ...values);
+    return result;
+  } catch (e) {
     console.error('[DB] Query error:', e?.message || e);
     throw e;
   }
 }
 
-export async function getOrCreateTodayGame(
-  seedImageUrl: string,
-  seedPrompt: string,
-  initialEditorFid: number | null
-) {
+export async function getOrCreateTodayGame(seedImageUrl, seedPrompt, initialEditorFid) {
   const today = new Date().toISOString().slice(0, 10);
-  const existing = await query<{ id: string }>`
-    SELECT id FROM games WHERE day_date = ${today} LIMIT 1
-  `;
+  const existing = await query`SELECT id FROM games WHERE day_date = ${today} LIMIT 1`;
   if (existing.length) return existing[0].id;
 
-  const inserted = await query<{ id: string }>`
+  const inserted = await query`
     INSERT INTO games (day_date, seed_image_url, seed_prompt, status, current_turn, max_turns, expiry_timestamp, next_editor_fid)
     VALUES (${today}, ${seedImageUrl}, ${seedPrompt}, 'active', 1, 10, NOW() + interval '30 minutes', ${initialEditorFid})
     RETURNING id
@@ -47,40 +38,23 @@ export async function getOrCreateTodayGame(
   return inserted[0].id;
 }
 
-export async function fetchGameState(gameId: string) {
-  const gameRows = await query<any>`
-    SELECT * FROM games WHERE id = ${gameId} LIMIT 1
-  `;
+export async function fetchGameState(gameId) {
+  const gameRows = await query`SELECT * FROM games WHERE id = ${gameId} LIMIT 1`;
   if (!gameRows.length) return null;
-  const turns = await query<any>`
-    SELECT * FROM turns WHERE game_id = ${gameId} ORDER BY turn_number ASC
-  `;
+  const turns = await query`SELECT * FROM turns WHERE game_id = ${gameId} ORDER BY turn_number ASC`;
   return { game: gameRows[0], turns };
 }
 
-export async function assertTurnPermission(gameId: string, fid: number): Promise<void> {
-  const rows = await query<any>`
-    SELECT next_editor_fid, status FROM games WHERE id = ${gameId} LIMIT 1
-  `;
+export async function assertTurnPermission(gameId, fid) {
+  const rows = await query`SELECT next_editor_fid, status FROM games WHERE id = ${gameId} LIMIT 1`;
   if (!rows.length) throw new Error('Game not found');
   const { next_editor_fid, status } = rows[0];
   if (status !== 'active') throw new Error('Game not active');
   if (next_editor_fid !== fid) throw new Error('Not your turn');
 }
 
-export async function insertTurnAndPass(params: {
-  gameId: string;
-  editorFid: number;
-  passedToFid: number;
-  prompt: string;
-  imageUrl: string;
-  veniceRequest?: any;
-  veniceResponse?: any;
-}) {
-  const { gameId, editorFid, passedToFid, prompt, imageUrl, veniceRequest, veniceResponse } = params;
-  const g = await query<any>`
-    SELECT current_turn, max_turns FROM games WHERE id = ${gameId} LIMIT 1
-  `;
+export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt, imageUrl, veniceRequest, veniceResponse }) {
+  const g = await query`SELECT current_turn, max_turns FROM games WHERE id = ${gameId} LIMIT 1`;
   if (!g.length) throw new Error('Game not found');
   const { current_turn, max_turns } = g[0];
   if (current_turn > max_turns) throw new Error('Game already completed');
@@ -107,7 +81,7 @@ export async function insertTurnAndPass(params: {
   `;
 }
 
-export async function setTurnIpfs(gameId: string, turnNumber: number, cid: string) {
+export async function setTurnIpfs(gameId, turnNumber, cid) {
   await query`
     UPDATE turns SET ipfs_cid = ${cid}
     WHERE game_id = ${gameId} AND turn_number = ${turnNumber}
