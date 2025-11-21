@@ -1,4 +1,4 @@
-import { getOrCreateTodayGame, fetchGameState } from './_lib/db.js';
+import { getOrCreateTodayGame, fetchGameState, query } from './_lib/db.js';
 import { extractFidFromAuthHeader } from './_lib/auth.js';
 
 const DEFAULT_SEED_IMAGE = 'https://picsum.photos/id/28/800/800';
@@ -11,9 +11,21 @@ export default async function handler(req, res) {
     }
 
     const callerFid = extractFidFromAuthHeader(req) || null;
-    const gameId = await getOrCreateTodayGame(DEFAULT_SEED_IMAGE, DEFAULT_SEED_PROMPT, callerFid);
-    const state = await fetchGameState(gameId);
+
+    const gameId = await getOrCreateTodayGame(
+      DEFAULT_SEED_IMAGE,
+      DEFAULT_SEED_PROMPT,
+      callerFid
+    );
+
+    let state = await fetchGameState(gameId);
     if (!state) return respond(res, 500, { error: 'Failed to load state' });
+
+    // Self-heal legacy rows: assign first editor if missing and caller present
+    if (state.game.next_editor_fid == null && callerFid != null) {
+      await query`UPDATE games SET next_editor_fid = ${callerFid}, updated_at = NOW() WHERE id = ${gameId} AND next_editor_fid IS NULL`;
+      state = await fetchGameState(gameId); // refetch
+    }
 
     return respond(res, 200, {
       gameId,
@@ -23,7 +35,10 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error('[api/game-state] Unexpected error:', e?.message || e);
-    return respond(res, 500, { error: 'Internal server error', detail: e?.message || String(e) });
+    return respond(res, 500, {
+      error: 'Internal server error',
+      detail: e?.message || String(e)
+    });
   }
 }
 
