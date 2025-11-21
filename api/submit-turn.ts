@@ -1,5 +1,5 @@
-import { fetchGameState, assertTurnPermission, insertTurnAndPass } from '../services/db';
-import { extractFidFromAuthHeader } from '../services/auth';
+import { fetchGameState, assertTurnPermission, insertTurnAndPass } from './_lib/db';
+import { extractFidFromAuthHeader } from './_lib/auth';
 
 export default async function handler(req: any, res: any) {
   try {

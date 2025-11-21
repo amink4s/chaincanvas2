@@ -1,5 +1,5 @@
-import { getOrCreateTodayGame, fetchGameState } from '../services/db';
-import { extractFidFromAuthHeader } from '../services/auth';
+import { getOrCreateTodayGame, fetchGameState } from './_lib/db';
+import { extractFidFromAuthHeader } from './_lib/auth';
 
 const DEFAULT_SEED_IMAGE = 'https://picsum.photos/id/28/800/800';
 const DEFAULT_SEED_PROMPT = 'A mysterious forest landscape';
