@@ -1,13 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GameState, MOCK_USERS, FarcasterUser } from '../types';
+import { GameState, MOCK_USERS } from '../types';
 import { getInitialState, formatTimeLeft } from '../services/simulation';
 import { editImage, getLastVeniceError, getLastVeniceDebug } from '../services/venice';
 import { saveTurn, updateTurnIpfs } from '../services/storage';
 import { searchFarcasterUsers, debounce, SearchUser } from '../services/userSearch';
-import { Timer, Send, RefreshCw, Camera, Loader2, Lock, Bug, CloudUpload, Search as SearchIcon, X } from 'lucide-react';
+import {
+  Timer,
+  Send,
+  RefreshCw,
+  Camera,
+  Loader2,
+  Lock,
+  Bug,
+  CloudUpload,
+  Search as SearchIcon,
+  X
+} from 'lucide-react';
 import { sdk } from '@farcaster/miniapp-sdk';
 
-const GAME_ID = 'daily-1'; // Placeholder until /api/game-state used for dynamic ID.
+const GAME_ID = 'daily-1'; // Placeholder until /api/game-state is wired.
+const MINI_APP_URL = 'https://chaincanvas-xi.vercel.app/'; // Public mini app URL (embed target)
 
 const GamePrototype: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(getInitialState());
@@ -21,6 +33,7 @@ const GamePrototype: React.FC = () => {
   const [lastDataUrl, setLastDataUrl] = useState<string | null>(null);
   const [ipfsStatus, setIpfsStatus] = useState<string | null>(null);
   const [pinning, setPinning] = useState(false);
+  const [lastPinnedUrl, setLastPinnedUrl] = useState<string | null>(null);
 
   // NEXT EDITOR SEARCH
   const [nextEditorQuery, setNextEditorQuery] = useState('');
@@ -70,6 +83,8 @@ const GamePrototype: React.FC = () => {
     setShowDebug(false);
     setDebugMeta(null);
     setLastDataUrl(null);
+    setLastPinnedUrl(null);
+    setIpfsStatus(null);
     setIsGenerating(true);
 
     try {
@@ -77,7 +92,7 @@ const GamePrototype: React.FC = () => {
       setLastDataUrl(dataUrl);
       setGameState(prev => ({
         ...prev,
-        currentImage: dataUrl,
+        currentImage: dataUrl, // display the data URL
         currentPrompt: inputPrompt
       }));
     } catch (e: any) {
@@ -97,13 +112,19 @@ const GamePrototype: React.FC = () => {
       const resp = await fetch('/api/pin-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: lastDataUrl, prompt: gameState.currentPrompt, gameId: GAME_ID, turnNumber: gameState.turnCount })
+        body: JSON.stringify({
+          dataUrl: lastDataUrl,
+          prompt: gameState.currentPrompt,
+          gameId: GAME_ID,
+          turnNumber: gameState.turnCount
+        })
       });
       const data = await resp.json();
       if (!resp.ok) {
         setIpfsStatus(`Pin failed: ${data?.error || resp.status}`);
       } else {
         setIpfsStatus(`Pinned: ${data.ipfsCid}`);
+        setLastPinnedUrl(data.gatewayUrl || null);
         await updateTurnIpfs(GAME_ID, gameState.turnCount, data.ipfsCid, data.gatewayUrl);
       }
     } catch (e: any) {
@@ -133,11 +154,11 @@ const GamePrototype: React.FC = () => {
   const confirmTurn = async () => {
     if (!selectedNextUser || !lastDataUrl) return;
 
-    // Save turn (stub local + future DB)
+    // Record turn (local stub; replace with /api/submit-turn).
     await saveTurn({
       gameId: GAME_ID,
       turnNumber: gameState.turnCount,
-      editorFid: 88, // Replace with real fid from quickAuth later
+      editorFid: 88, // Replace with real fid from QuickAuth
       prompt: gameState.currentPrompt,
       imageDataUrl: lastDataUrl,
       createdAt: Date.now()
@@ -168,17 +189,43 @@ const GamePrototype: React.FC = () => {
     setShowShareModal(true);
   };
 
+  const buildCastText = () => {
+    if (!selectedNextUser) return '';
+    return `I just mutated the daily image with "${gameState.currentPrompt}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n${MINI_APP_URL}`;
+  };
+
+  // Compose cast with proper embed tuple types.
+  // Venice image should be pinned first for a stable URL; if not pinned fall back to mini app only.
   const composeCast = async () => {
     if (!selectedNextUser) return;
-    const text = `I just mutated the daily image with "${gameState.currentPrompt}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n#ChainReaction #Base #Farcaster`;
+    const text = buildCastText();
+
+    // Ensure we have at least the mini app link embedded.
+    // If pinned image exists include both as a fixed-length tuple.
+    let embeds: [string] | [string, string] | undefined;
+    if (lastPinnedUrl) {
+      embeds = [lastPinnedUrl, MINI_APP_URL] as [string, string];
+    } else {
+      embeds = [MINI_APP_URL]; // Single embed tuple.
+    }
+
     try {
-      // Farcaster compose cast action
-      await sdk.actions.composeCast?.({ text });
-      // Close modal after initiating
+      // Optional manifest signing (non-fatal if fails).
+      try {
+        await (sdk as any)?.experimental?.signManifest?.({
+          domain: window.location.hostname
+        });
+      } catch (e) {
+        // ignore
+      }
+
+      // Primary call
+      await sdk.actions.composeCast?.({ text, embeds });
+
       setShowShareModal(false);
     } catch (e: any) {
       console.error('ComposeCast error', e);
-      alert('Failed to open composer. Please copy manually:\n\n' + text);
+      alert('Failed to open composer with prefilled content. Copy manually:\n\n' + text);
     }
   };
 
@@ -234,6 +281,7 @@ const GamePrototype: React.FC = () => {
           </div>
         </div>
 
+        {/* Controls */}
         {isMyTurn ? (
           <div className="space-y-5">
             {/* Step 1: Edit */}
@@ -313,7 +361,7 @@ const GamePrototype: React.FC = () => {
                     value={nextEditorQuery}
                     onChange={e => {
                       setNextEditorQuery(e.target.value);
-                      setSelectedNextUser(null); // Reset selection if user edits query
+                      setSelectedNextUser(null); // Reset selection if query changes
                     }}
                     placeholder="Search Farcaster username..."
                     className="flex-1 bg-transparent text-sm text-white outline-none"
@@ -422,10 +470,7 @@ const GamePrototype: React.FC = () => {
 
             <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
               <p className="text-slate-300 text-sm font-mono whitespace-pre-line">
-                {`I just mutated the daily image with "${gameState.currentPrompt}".
-
-Your turn @${selectedNextUser.username}! You have 30 mins. ⏱️
-#ChainReaction #Base #Farcaster`}
+                {buildCastText()}
               </p>
               <div className="mt-3 rounded-md overflow-hidden h-32 w-full bg-black">
                 <img
@@ -434,6 +479,11 @@ Your turn @${selectedNextUser.username}! You have 30 mins. ⏱️
                   alt="Turn Result"
                 />
               </div>
+              {lastPinnedUrl && (
+                <div className="mt-2 text-[11px] text-slate-400">
+                  Image embed ready: {lastPinnedUrl}
+                </div>
+              )}
             </div>
 
             <button
