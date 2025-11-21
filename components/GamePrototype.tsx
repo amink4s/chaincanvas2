@@ -1,17 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GameState, MOCK_USERS, FarcasterUser } from '../types';
 import { getInitialState, formatTimeLeft } from '../services/simulation';
 import { editImage, getLastVeniceError, getLastVeniceDebug } from '../services/venice';
-import { saveTurn, updateTurnIpfs } from '../services/storage.ts';
-import { Timer, Send, RefreshCw, Camera, Loader2, Lock, Bug, CloudUpload } from 'lucide-react';
+import { saveTurn, updateTurnIpfs } from '../services/storage';
+import { searchFarcasterUsers, debounce, SearchUser } from '../services/userSearch';
+import { Timer, Send, RefreshCw, Camera, Loader2, Lock, Bug, CloudUpload, Search as SearchIcon, X } from 'lucide-react';
+import { sdk } from '@farcaster/miniapp-sdk';
 
-const GAME_ID = 'daily-1'; // Placeholder; would be dynamic once backend exists.
+const GAME_ID = 'daily-1'; // Placeholder until /api/game-state used for dynamic ID.
 
 const GamePrototype: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(getInitialState());
   const [inputPrompt, setInputPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<FarcasterUser | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -21,12 +22,47 @@ const GamePrototype: React.FC = () => {
   const [ipfsStatus, setIpfsStatus] = useState<string | null>(null);
   const [pinning, setPinning] = useState(false);
 
+  // NEXT EDITOR SEARCH
+  const [nextEditorQuery, setNextEditorQuery] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
+  const [selectedNextUser, setSelectedNextUser] = useState<SearchUser | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Debounced search function
+  const debouncedSearch = useRef(
+    debounce(async (q: string) => {
+      if (!q.trim()) {
+        setSearchResults([]);
+        return;
+      }
+      setSearchLoading(true);
+      const results = await searchFarcasterUsers(q);
+      setSearchResults(results);
+      setSearchLoading(false);
+      setDropdownOpen(true);
+    }, 300)
+  ).current;
+
   useEffect(() => {
     const interval = setInterval(() => {
       setTimeLeft(formatTimeLeft(gameState.deadline));
     }, 1000);
     return () => clearInterval(interval);
   }, [gameState.deadline]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   const handleGenerate = async () => {
     if (!inputPrompt.trim() || isGenerating) return;
@@ -41,7 +77,7 @@ const GamePrototype: React.FC = () => {
       setLastDataUrl(dataUrl);
       setGameState(prev => ({
         ...prev,
-        currentImage: dataUrl, // We display directly the data URL
+        currentImage: dataUrl,
         currentPrompt: inputPrompt
       }));
     } catch (e: any) {
@@ -53,14 +89,55 @@ const GamePrototype: React.FC = () => {
     }
   };
 
-  const confirmTurn = async () => {
-    if (!selectedUser || !lastDataUrl) return;
+  const pinToIpfs = async () => {
+    if (!lastDataUrl) return;
+    setPinning(true);
+    setIpfsStatus(null);
+    try {
+      const resp = await fetch('/api/pin-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl: lastDataUrl, prompt: gameState.currentPrompt, gameId: GAME_ID, turnNumber: gameState.turnCount })
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setIpfsStatus(`Pin failed: ${data?.error || resp.status}`);
+      } else {
+        setIpfsStatus(`Pinned: ${data.ipfsCid}`);
+        await updateTurnIpfs(GAME_ID, gameState.turnCount, data.ipfsCid, data.gatewayUrl);
+      }
+    } catch (e: any) {
+      setIpfsStatus('Pin network error: ' + (e?.message || String(e)));
+    } finally {
+      setPinning(false);
+    }
+  };
 
-    // Record turn (stub)
+  // Editor selection search handler
+  useEffect(() => {
+    if (!nextEditorQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    debouncedSearch(nextEditorQuery);
+  }, [nextEditorQuery, debouncedSearch]);
+
+  const selectNextEditor = (user: SearchUser) => {
+    setSelectedNextUser(user);
+    setNextEditorQuery(user.username);
+    setDropdownOpen(false);
+  };
+
+  const isMyTurn = gameState.nextEditor?.fid === 88; // Replace with actual QuickAuth fid later.
+
+  const confirmTurn = async () => {
+    if (!selectedNextUser || !lastDataUrl) return;
+
+    // Save turn (stub local + future DB)
     await saveTurn({
       gameId: GAME_ID,
       turnNumber: gameState.turnCount,
-      editorFid: 88, // Mock "you"
+      editorFid: 88, // Replace with real fid from quickAuth later
       prompt: gameState.currentPrompt,
       imageDataUrl: lastDataUrl,
       createdAt: Date.now()
@@ -78,39 +155,32 @@ const GamePrototype: React.FC = () => {
       history: [...prev.history, turnData],
       turnCount: prev.turnCount + 1,
       lastEditor: MOCK_USERS[3],
-      nextEditor: selectedUser,
+      nextEditor: {
+        fid: selectedNextUser.fid,
+        username: selectedNextUser.username,
+        pfpUrl: selectedNextUser.pfpUrl || 'https://placehold.co/64x64?text=U'
+      },
       deadline: Date.now() + 30 * 60 * 1000,
       currentPrompt: ''
     }));
+
     setInputPrompt('');
     setShowShareModal(true);
   };
 
-  const pinToIpfs = async () => {
-    if (!lastDataUrl) return;
-    setPinning(true);
-    setIpfsStatus(null);
+  const composeCast = async () => {
+    if (!selectedNextUser) return;
+    const text = `I just mutated the daily image with "${gameState.currentPrompt}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n#ChainReaction #Base #Farcaster`;
     try {
-      const resp = await fetch('/api/pin-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: lastDataUrl, prompt: gameState.currentPrompt })
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        setIpfsStatus(`Pin failed: ${data?.error || resp.status}`);
-      } else {
-        setIpfsStatus(`Pinned: ${data.ipfsCid}`);
-        await updateTurnIpfs(GAME_ID, gameState.turnCount, data.ipfsCid, data.gatewayUrl);
-      }
+      // Farcaster compose cast action
+      await sdk.actions.composeCast?.({ text });
+      // Close modal after initiating
+      setShowShareModal(false);
     } catch (e: any) {
-      setIpfsStatus('Pin network error: ' + (e?.message || String(e)));
-    } finally {
-      setPinning(false);
+      console.error('ComposeCast error', e);
+      alert('Failed to open composer. Please copy manually:\n\n' + text);
     }
   };
-
-  const isMyTurn = gameState.nextEditor?.fid === 88;
 
   return (
     <div className="h-full flex flex-col max-w-md mx-auto bg-black border-x border-slate-800 relative shadow-2xl overflow-y-auto">
@@ -164,10 +234,9 @@ const GamePrototype: React.FC = () => {
           </div>
         </div>
 
-        {/* Controls */}
         {isMyTurn ? (
-          <div className="space-y-4">
-            {/* Step 1 */}
+          <div className="space-y-5">
+            {/* Step 1: Edit */}
             <div className="space-y-2">
               <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
                 1. Make your edit
@@ -177,7 +246,7 @@ const GamePrototype: React.FC = () => {
                   type="text"
                   value={inputPrompt}
                   onChange={e => setInputPrompt(e.target.value)}
-                  placeholder='e.g. "Change the sky to a sunrise"'
+                  placeholder='e.g. "Change the sky to purple"'
                   className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-white"
                   disabled={isGenerating}
                 />
@@ -231,39 +300,87 @@ const GamePrototype: React.FC = () => {
               )}
             </div>
 
-            {/* Step 2 */}
-            <div className="space-y-2">
+            {/* Step 2: Pass the torch (Search box) */}
+            <div className="space-y-2" ref={dropdownRef}>
               <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
                 2. Pass the torch
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {MOCK_USERS.filter(u => u.fid !== 88).map(user => (
-                  <button
-                    key={user.fid}
-                    onClick={() => setSelectedUser(user)}
-                    className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-all ${
-                      selectedUser?.fid === user.fid
-                        ? 'bg-indigo-600/20 border-indigo-500 text-white'
-                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-indigo-500/50'
-                    }`}
-                  >
-                    <img
-                      src={user.pfpUrl}
-                      className="w-8 h-8 rounded-full"
-                      alt={user.username}
-                    />
-                    <span className="text-xs font-medium truncate max-w-full">
-                      @{user.username}
-                    </span>
-                  </button>
-                ))}
+              <div className="relative">
+                <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500">
+                  <SearchIcon className="w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={nextEditorQuery}
+                    onChange={e => {
+                      setNextEditorQuery(e.target.value);
+                      setSelectedNextUser(null); // Reset selection if user edits query
+                    }}
+                    placeholder="Search Farcaster username..."
+                    className="flex-1 bg-transparent text-sm text-white outline-none"
+                    autoComplete="off"
+                  />
+                  {nextEditorQuery && (
+                    <button
+                      className="text-slate-400 hover:text-slate-200"
+                      onClick={() => {
+                        setNextEditorQuery('');
+                        setSearchResults([]);
+                        setSelectedNextUser(null);
+                      }}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {dropdownOpen && searchResults.length > 0 && (
+                  <div className="absolute z-40 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-lg max-h-56 overflow-auto">
+                    {searchResults.map(u => (
+                      <button
+                        key={u.fid}
+                        onClick={() => selectNextEditor(u)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                          selectedNextUser?.fid === u.fid
+                            ? 'bg-indigo-600/20 text-white'
+                            : 'text-slate-300 hover:bg-slate-800'
+                        }`}
+                      >
+                        <img
+                          src={u.pfpUrl || 'https://placehold.co/32x32?text=U'}
+                          className="w-8 h-8 rounded-full object-cover border border-slate-700"
+                          alt={u.username}
+                        />
+                        <div className="flex flex-col">
+                          <span className="font-semibold">@{u.username}</span>
+                          {u.displayName && (
+                            <span className="text-[10px] text-slate-400">
+                              {u.displayName}
+                            </span>
+                          )}
+                        </div>
+                        <span className="ml-auto text-[10px] text-slate-500">
+                          fid {u.fid}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchLoading && (
+                  <div className="absolute right-2 top-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                  </div>
+                )}
+                {selectedNextUser && (
+                  <div className="mt-2 text-[11px] text-green-400 flex items-center gap-2">
+                    Selected: @{selectedNextUser.username} (fid {selectedNextUser.fid})
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Step 3 */}
+            {/* Step 3: Finalize */}
             <button
               onClick={confirmTurn}
-              disabled={!selectedUser || !lastDataUrl || !inputPrompt.trim()}
+              disabled={!selectedNextUser || !lastDataUrl || !inputPrompt.trim()}
               className="w-full bg-white text-black font-bold py-4 rounded-xl shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)] hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               Finalize & Pass Turn <Send className="w-4 h-4" />
@@ -277,8 +394,7 @@ const GamePrototype: React.FC = () => {
             <div>
               <h3 className="text-lg font-bold text-white">Not Your Turn</h3>
               <p className="text-slate-400 text-sm max-w-[200px] mx-auto mt-2">
-                Waiting for <span className="text-indigo-400">@{gameState.nextEditor?.username}</span> to
-                make a move.
+                Waiting for <span className="text-indigo-400">@{gameState.nextEditor?.username}</span> to make a move.
               </p>
             </div>
             {gameState.deadline && Date.now() > gameState.deadline && (
@@ -291,7 +407,7 @@ const GamePrototype: React.FC = () => {
       </div>
 
       {/* Share Modal */}
-      {showShareModal && (
+      {showShareModal && selectedNextUser && (
         <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 space-y-6">
             <div className="text-center space-y-2">
@@ -300,15 +416,16 @@ const GamePrototype: React.FC = () => {
               </div>
               <h3 className="text-xl font-bold text-white">Turn Complete!</h3>
               <p className="text-slate-400 text-sm">
-                You must cast this to notify @{selectedUser?.username}.
+                Compose a cast to notify @{selectedNextUser.username}.
               </p>
             </div>
+
             <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-              <p className="text-slate-300 text-sm font-mono">
-                I just mutated the daily image with "{gameState.currentPrompt}". <br />
-                <br />
-                Your turn @{selectedUser?.username}! You have 30 mins. ⏱️ <br />
-                #ChainReaction #Base #Farcaster
+              <p className="text-slate-300 text-sm font-mono whitespace-pre-line">
+                {`I just mutated the daily image with "${gameState.currentPrompt}".
+
+Your turn @${selectedNextUser.username}! You have 30 mins. ⏱️
+#ChainReaction #Base #Farcaster`}
               </p>
               <div className="mt-3 rounded-md overflow-hidden h-32 w-full bg-black">
                 <img
@@ -318,17 +435,18 @@ const GamePrototype: React.FC = () => {
                 />
               </div>
             </div>
+
             <button
-              onClick={() => setShowShareModal(false)}
+              onClick={composeCast}
               className="w-full bg-[#7C65C1] hover:bg-[#6952A3] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
             >
-              Compose Cast
+              Open Composer
             </button>
             <button
               onClick={() => setShowShareModal(false)}
               className="w-full text-slate-500 text-sm py-2 hover:text-slate-300"
             >
-              Close Preview
+              Close
             </button>
           </div>
         </div>

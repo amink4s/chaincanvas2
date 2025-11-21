@@ -2,7 +2,7 @@
 // Accepts POST { dataUrl: string, prompt?: string }
 // Returns { ipfsCid, gatewayUrl }
 // Requires either PINATA_JWT or (PINATA_API_KEY & PINATA_API_SECRET)
-
+import { setTurnIpfs } from '../services/db';
 export default async function handler(req: any, res: any) {
     if (req.method !== 'POST') {
       res.statusCode = 405;
