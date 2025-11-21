@@ -1,4 +1,4 @@
-import { query } from './db.ts';
+import { query } from './db';
 
 export default async function handler(req: any, res: any) {
   try {

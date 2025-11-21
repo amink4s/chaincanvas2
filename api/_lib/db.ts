@@ -1,8 +1,5 @@
 import { neon } from '@neondatabase/serverless';
 
-/**
- * Lazy initialization so Serverless won't access process.env until needed.
- */
 let sqlClient: any = null;
 
 function getClient() {
