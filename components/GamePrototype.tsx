@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { GameState, MOCK_USERS, FarcasterUser } from '../types';
 import { getInitialState, formatTimeLeft } from '../services/simulation';
-import { editImage, getLastVeniceError } from '../services/venice';
-import { Timer, Send, RefreshCw, Camera, Loader2, Lock } from 'lucide-react';
+import { editImage, getLastVeniceError, getLastVeniceDebug } from '../services/venice';
+import { Timer, Send, RefreshCw, Camera, Loader2, Lock, Bug } from 'lucide-react';
 
 const GamePrototype: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(getInitialState());
@@ -12,8 +12,9 @@ const GamePrototype: React.FC = () => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugMeta, setDebugMeta] = useState<any>(null);
 
-  // Timer update
   useEffect(() => {
     const interval = setInterval(() => {
       setTimeLeft(formatTimeLeft(gameState.deadline));
@@ -24,17 +25,21 @@ const GamePrototype: React.FC = () => {
   const handleGenerate = async () => {
     if (!inputPrompt.trim() || isGenerating) return;
     setErrorMsg(null);
+    setShowDebug(false);
+    setDebugMeta(null);
     setIsGenerating(true);
+
     try {
-      const newImageUrl = await editImage(inputPrompt, gameState.currentImage);
+      const newImageUrl = await editImage(inputPrompt, gameState.currentImage, true);
       setGameState(prev => ({
         ...prev,
         currentImage: newImageUrl,
         currentPrompt: inputPrompt
       }));
     } catch (e: any) {
-      console.error('Venice edit error caught in UI:', e);
-      setErrorMsg(getLastVeniceError() || e.message || 'Unknown error');
+      const err = getLastVeniceError() || e.message || 'Unknown error';
+      setErrorMsg(err);
+      setDebugMeta(getLastVeniceDebug());
     } finally {
       setIsGenerating(false);
     }
@@ -44,11 +49,10 @@ const GamePrototype: React.FC = () => {
     if (!selectedUser) return;
     const turnData = {
       turn: gameState.turnCount,
-      editor: MOCK_USERS[3], // Mock "you"
+      editor: MOCK_USERS[3],
       image: gameState.currentImage,
       prompt: gameState.currentPrompt
     };
-
     setGameState(prev => ({
       ...prev,
       history: [...prev.history, turnData],
@@ -62,18 +66,18 @@ const GamePrototype: React.FC = () => {
     setShowShareModal(true);
   };
 
-  // Mock "your" fid is 88 in MOCK_USERS
   const isMyTurn = gameState.nextEditor?.fid === 88;
 
   return (
     <div className="h-full flex flex-col max-w-md mx-auto bg-black border-x border-slate-800 relative shadow-2xl overflow-y-auto">
-      {/* Header */}
       <div className="bg-slate-900 p-4 flex justify-between items-center border-b border-slate-800">
         <div className="flex flex-col">
-          <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">Round</span>
-          <span className="text-xl font-black text-indigo-400">
-            {gameState.turnCount} / {gameState.maxTurns}
+          <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">
+            Round
           </span>
+            <span className="text-xl font-black text-indigo-400">
+              {gameState.turnCount} / {gameState.maxTurns}
+            </span>
         </div>
         <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
           <Timer
@@ -87,10 +91,8 @@ const GamePrototype: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* Image Stage */}
-        <div className="relative rounded-xl overflow-hidden border-2 border-slate-700 shadow-lg shadow-indigo-500/10 bg-slate-900 aspect-square flex items-center justify-center">
+        <div className="relative rounded-xl overflow-hidden border-2 border-slate-700 shadow-lg bg-slate-900 aspect-square flex items-center justify-center">
           <img
             src={gameState.currentImage}
             alt="Current State"
@@ -102,7 +104,9 @@ const GamePrototype: React.FC = () => {
             </p>
             <div className="flex items-center gap-2 mt-2">
               <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[10px] font-bold">
-                {gameState.lastEditor ? gameState.lastEditor.username[0].toUpperCase() : 'S'}
+                {gameState.lastEditor
+                  ? gameState.lastEditor.username[0].toUpperCase()
+                  : 'S'}
               </div>
               <span className="text-xs text-slate-300">
                 {gameState.lastEditor
@@ -113,10 +117,8 @@ const GamePrototype: React.FC = () => {
           </div>
         </div>
 
-        {/* Controls */}
         {isMyTurn ? (
           <div className="space-y-4">
-            {/* Step 1: Edit */}
             <div className="space-y-2">
               <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
                 1. Make your edit
@@ -133,7 +135,7 @@ const GamePrototype: React.FC = () => {
                 <button
                   onClick={handleGenerate}
                   disabled={isGenerating || !inputPrompt.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 rounded-lg flex items-center justify-center transition-all"
+                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 rounded-lg flex items-center justify-center transition-all"
                 >
                   {isGenerating ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -143,13 +145,26 @@ const GamePrototype: React.FC = () => {
                 </button>
               </div>
               {errorMsg && (
-                <div className="text-xs bg-red-500/15 border border-red-600/40 text-red-300 rounded-md px-3 py-2">
-                  Venice error: {errorMsg}
+                <div className="text-xs bg-red-500/15 border border-red-600/40 text-red-300 rounded-md px-3 py-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Bug className="w-4 h-4" />
+                    <span>Venice error: {errorMsg}</span>
+                  </div>
+                  <button
+                    onClick={() => setShowDebug(d => !d)}
+                    className="text-[10px] underline text-red-200 hover:text-red-100"
+                  >
+                    {showDebug ? 'Hide debug' : 'Show debug'}
+                  </button>
+                  {showDebug && debugMeta && (
+                    <pre className="max-h-64 overflow-auto text-[10px] bg-black/60 border border-red-900/40 p-2 rounded">
+                      {JSON.stringify(debugMeta, null, 2)}
+                    </pre>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Step 2: Pick User */}
             <div className="space-y-2">
               <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
                 2. Pass the torch
@@ -178,7 +193,6 @@ const GamePrototype: React.FC = () => {
               </div>
             </div>
 
-            {/* Step 3: Submit */}
             <button
               onClick={confirmTurn}
               disabled={!selectedUser || !inputPrompt.trim()}
@@ -195,8 +209,8 @@ const GamePrototype: React.FC = () => {
             <div>
               <h3 className="text-lg font-bold text-white">Not Your Turn</h3>
               <p className="text-slate-400 text-sm max-w-[200px] mx-auto mt-2">
-                Waiting for <span className="text-indigo-400">@{gameState.nextEditor?.username}</span> to
-                make a move.
+                Waiting for <span className="text-indigo-400">@{gameState.nextEditor?.username}</span>{' '}
+                to make a move.
               </p>
             </div>
             {gameState.deadline && Date.now() > gameState.deadline && (
@@ -208,7 +222,6 @@ const GamePrototype: React.FC = () => {
         )}
       </div>
 
-      {/* Share Modal */}
       {showShareModal && (
         <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 space-y-6">
@@ -221,7 +234,6 @@ const GamePrototype: React.FC = () => {
                 You must cast this to notify @{selectedUser?.username}.
               </p>
             </div>
-
             <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
               <p className="text-slate-300 text-sm font-mono">
                 I just mutated the daily image with "{gameState.currentPrompt}". <br />
@@ -237,7 +249,6 @@ const GamePrototype: React.FC = () => {
                 />
               </div>
             </div>
-
             <button
               onClick={() => setShowShareModal(false)}
               className="w-full bg-[#7C65C1] hover:bg-[#6952A3] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
