@@ -28,6 +28,16 @@ function getAuthToken(): string | null {
   return (window as any).QUICKAUTH_TOKEN || null;
 }
 
+// Prefer server-reported fid; fall back to QuickAuth fid stored on window
+function getMyFidFromContext(serverCallerFid: number | null): number | null {
+  if (typeof serverCallerFid === 'number') return serverCallerFid;
+  const w: any = window as any;
+  const fallback = w?.CURRENT_FID;
+  if (fallback == null) return null;
+  const n = Number(fallback);
+  return Number.isFinite(n) ? n : null;
+}
+
 const GamePrototype: React.FC = () => {
   const [serverState, setServerState] = useState<ServerState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,11 +139,25 @@ const GamePrototype: React.FC = () => {
     return turns[turns.length - 1].prompt_text || '';
   })();
 
-  const myFid = serverState?.callerFid || null;
-  const isMyTurn = (() => {
-    if (!serverState || !myFid) return false;
-    return serverState.game.next_editor_fid === myFid;
-  })();
+  // Robust turn ownership: coerce BIGINT string to number; fallback to window fid if server callerFid is null
+  const myFid = getMyFidFromContext(serverState?.callerFid ?? null);
+  const nextFid: number | null =
+    serverState?.game?.next_editor_fid != null
+      ? (Number(serverState.game.next_editor_fid) || null)
+      : null;
+
+  const isMyTurn = Boolean(myFid != null && nextFid != null && myFid === nextFid);
+
+  // Quick debug to verify identity/turn logic
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.debug('turn debug', {
+      myFid,
+      nextFid,
+      callerFid: serverState?.callerFid ?? null,
+      rawNext: serverState?.game?.next_editor_fid
+    });
+  }
 
   const handleGenerate = async () => {
     if (!inputPrompt.trim() || isGenerating || !serverState || !isMyTurn) return;
