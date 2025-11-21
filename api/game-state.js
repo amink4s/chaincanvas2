@@ -3,6 +3,7 @@ import { extractFidFromAuthHeader } from './_lib/auth.js';
 
 const DEFAULT_SEED_IMAGE = 'https://picsum.photos/id/28/800/800';
 const DEFAULT_SEED_PROMPT = 'A mysterious forest landscape';
+const TURN_WINDOW_MINUTES = 30;
 
 export default async function handler(req, res) {
   try {
@@ -11,10 +12,8 @@ export default async function handler(req, res) {
     }
 
     const callerFid = extractFidFromAuthHeader(req) || null;
-
-    // If we have a caller fid, ensure user row exists
     if (callerFid) {
-      await ensureUser(callerFid, null, null, null);
+      await ensureUser(callerFid);
     }
 
     const gameId = await getOrCreateTodayGame(
@@ -26,9 +25,20 @@ export default async function handler(req, res) {
     let state = await fetchGameState(gameId);
     if (!state) return respond(res, 500, { error: 'Failed to load state' });
 
-    // Self-heal legacy row if next_editor_fid missing
+    // Self-heal legacy next_editor_fid
     if (state.game.next_editor_fid == null && callerFid != null) {
       await query`UPDATE games SET next_editor_fid = ${callerFid}, updated_at = NOW() WHERE id = ${gameId} AND next_editor_fid IS NULL`;
+      state = await fetchGameState(gameId);
+    }
+
+    // Auto-renew if expired but still active (optional)
+    if (state.game.status === 'active' && state.game.expiry_timestamp && new Date(state.game.expiry_timestamp).getTime() < Date.now()) {
+      await query`
+        UPDATE games
+        SET expiry_timestamp = NOW() + interval '${TURN_WINDOW_MINUTES} minutes',
+            updated_at = NOW()
+        WHERE id = ${gameId}
+      `;
       state = await fetchGameState(gameId);
     }
 

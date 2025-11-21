@@ -79,3 +79,16 @@ export async function ensureUser(fid, username = null, displayName = null, pfpUr
           updated_at = NOW();
   `;
 }
+export async function ensureUser(fid, username = null, displayName = null, pfpUrl = null) {
+  await query`
+    INSERT INTO users (fid, username, display_name, pfp_url, last_seen_at, profile_last_refreshed_at, created_at, updated_at)
+    VALUES (${fid}, ${username}, ${displayName}, ${pfpUrl}, NOW(), NOW(), NOW(), NOW())
+    ON CONFLICT (fid) DO UPDATE
+      SET username = COALESCE(EXCLUDED.username, users.username),
+          display_name = COALESCE(EXCLUDED.display_name, users.display_name),
+          pfp_url = COALESCE(EXCLUDED.pfp_url, users.pfp_url),
+          last_seen_at = NOW(),
+          profile_last_refreshed_at = NOW(),
+          updated_at = NOW();
+  `;
+}
