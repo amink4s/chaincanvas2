@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { GameState, MOCK_USERS, FarcasterUser } from '../types';
 import { getInitialState, formatTimeLeft } from '../services/simulation';
 import { editImage, getLastVeniceError, getLastVeniceDebug } from '../services/venice';
-import { Timer, Send, RefreshCw, Camera, Loader2, Lock, Bug } from 'lucide-react';
+import { saveTurn, updateTurnIpfs } from '../services/storage.ts';
+import { Timer, Send, RefreshCw, Camera, Loader2, Lock, Bug, CloudUpload } from 'lucide-react';
+
+const GAME_ID = 'daily-1'; // Placeholder; would be dynamic once backend exists.
 
 const GamePrototype: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(getInitialState());
@@ -14,6 +17,9 @@ const GamePrototype: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [debugMeta, setDebugMeta] = useState<any>(null);
+  const [lastDataUrl, setLastDataUrl] = useState<string | null>(null);
+  const [ipfsStatus, setIpfsStatus] = useState<string | null>(null);
+  const [pinning, setPinning] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -27,13 +33,15 @@ const GamePrototype: React.FC = () => {
     setErrorMsg(null);
     setShowDebug(false);
     setDebugMeta(null);
+    setLastDataUrl(null);
     setIsGenerating(true);
 
     try {
-      const newImageUrl = await editImage(inputPrompt, gameState.currentImage, true);
+      const dataUrl = await editImage(inputPrompt, gameState.currentImage, true);
+      setLastDataUrl(dataUrl);
       setGameState(prev => ({
         ...prev,
-        currentImage: newImageUrl,
+        currentImage: dataUrl, // We display directly the data URL
         currentPrompt: inputPrompt
       }));
     } catch (e: any) {
@@ -45,14 +53,26 @@ const GamePrototype: React.FC = () => {
     }
   };
 
-  const confirmTurn = () => {
-    if (!selectedUser) return;
+  const confirmTurn = async () => {
+    if (!selectedUser || !lastDataUrl) return;
+
+    // Record turn (stub)
+    await saveTurn({
+      gameId: GAME_ID,
+      turnNumber: gameState.turnCount,
+      editorFid: 88, // Mock "you"
+      prompt: gameState.currentPrompt,
+      imageDataUrl: lastDataUrl,
+      createdAt: Date.now()
+    });
+
     const turnData = {
       turn: gameState.turnCount,
       editor: MOCK_USERS[3],
       image: gameState.currentImage,
       prompt: gameState.currentPrompt
     };
+
     setGameState(prev => ({
       ...prev,
       history: [...prev.history, turnData],
@@ -66,18 +86,43 @@ const GamePrototype: React.FC = () => {
     setShowShareModal(true);
   };
 
+  const pinToIpfs = async () => {
+    if (!lastDataUrl) return;
+    setPinning(true);
+    setIpfsStatus(null);
+    try {
+      const resp = await fetch('/api/pin-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl: lastDataUrl, prompt: gameState.currentPrompt })
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setIpfsStatus(`Pin failed: ${data?.error || resp.status}`);
+      } else {
+        setIpfsStatus(`Pinned: ${data.ipfsCid}`);
+        await updateTurnIpfs(GAME_ID, gameState.turnCount, data.ipfsCid, data.gatewayUrl);
+      }
+    } catch (e: any) {
+      setIpfsStatus('Pin network error: ' + (e?.message || String(e)));
+    } finally {
+      setPinning(false);
+    }
+  };
+
   const isMyTurn = gameState.nextEditor?.fid === 88;
 
   return (
     <div className="h-full flex flex-col max-w-md mx-auto bg-black border-x border-slate-800 relative shadow-2xl overflow-y-auto">
+      {/* Header */}
       <div className="bg-slate-900 p-4 flex justify-between items-center border-b border-slate-800">
         <div className="flex flex-col">
           <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">
             Round
           </span>
-            <span className="text-xl font-black text-indigo-400">
-              {gameState.turnCount} / {gameState.maxTurns}
-            </span>
+          <span className="text-xl font-black text-indigo-400">
+            {gameState.turnCount} / {gameState.maxTurns}
+          </span>
         </div>
         <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
           <Timer
@@ -91,7 +136,9 @@ const GamePrototype: React.FC = () => {
         </div>
       </div>
 
+      {/* Main */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {/* Image Stage */}
         <div className="relative rounded-xl overflow-hidden border-2 border-slate-700 shadow-lg bg-slate-900 aspect-square flex items-center justify-center">
           <img
             src={gameState.currentImage}
@@ -117,8 +164,10 @@ const GamePrototype: React.FC = () => {
           </div>
         </div>
 
+        {/* Controls */}
         {isMyTurn ? (
           <div className="space-y-4">
+            {/* Step 1 */}
             <div className="space-y-2">
               <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
                 1. Make your edit
@@ -163,8 +212,26 @@ const GamePrototype: React.FC = () => {
                   )}
                 </div>
               )}
+              {lastDataUrl && !errorMsg && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={pinToIpfs}
+                    disabled={pinning}
+                    className="text-xs flex items-center gap-2 px-3 py-2 rounded-md bg-slate-800 border border-slate-700 hover:border-indigo-500/60 text-slate-300 disabled:opacity-50"
+                  >
+                    <CloudUpload className="w-4 h-4" />
+                    {pinning ? 'Pinning...' : 'Pin to IPFS'}
+                  </button>
+                  {ipfsStatus && (
+                    <span className="text-[10px] text-indigo-300">
+                      {ipfsStatus}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
+            {/* Step 2 */}
             <div className="space-y-2">
               <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
                 2. Pass the torch
@@ -193,9 +260,10 @@ const GamePrototype: React.FC = () => {
               </div>
             </div>
 
+            {/* Step 3 */}
             <button
               onClick={confirmTurn}
-              disabled={!selectedUser || !inputPrompt.trim()}
+              disabled={!selectedUser || !lastDataUrl || !inputPrompt.trim()}
               className="w-full bg-white text-black font-bold py-4 rounded-xl shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)] hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
               Finalize & Pass Turn <Send className="w-4 h-4" />
@@ -209,8 +277,8 @@ const GamePrototype: React.FC = () => {
             <div>
               <h3 className="text-lg font-bold text-white">Not Your Turn</h3>
               <p className="text-slate-400 text-sm max-w-[200px] mx-auto mt-2">
-                Waiting for <span className="text-indigo-400">@{gameState.nextEditor?.username}</span>{' '}
-                to make a move.
+                Waiting for <span className="text-indigo-400">@{gameState.nextEditor?.username}</span> to
+                make a move.
               </p>
             </div>
             {gameState.deadline && Date.now() > gameState.deadline && (
@@ -222,6 +290,7 @@ const GamePrototype: React.FC = () => {
         )}
       </div>
 
+      {/* Share Modal */}
       {showShareModal && (
         <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 space-y-6">

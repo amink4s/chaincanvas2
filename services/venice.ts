@@ -1,21 +1,19 @@
 let lastError: string | null = null;
-let lastDebugMeta: any = null;
+let lastDebug: any = null;
 
 export function getLastVeniceError() {
   return lastError;
 }
-
 export function getLastVeniceDebug() {
-  return lastDebugMeta;
+  return lastDebug;
 }
 
-export async function editImage(
-  prompt: string,
-  currentImageUrl: string,
-  debug: boolean = true
-): Promise<string> {
+/**
+ * Calls proxy which returns a dataUrl (base64 image).
+ */
+export async function editImage(prompt: string, currentImageUrl: string, debug = true): Promise<string> {
   lastError = null;
-  lastDebugMeta = null;
+  lastDebug = null;
 
   const resp = await fetch(`/api/venice-edit${debug ? '?debug=1' : ''}`, {
     method: 'POST',
@@ -23,10 +21,10 @@ export async function editImage(
     body: JSON.stringify({ prompt, imageUrl: currentImageUrl, debug })
   });
 
-  const raw = await resp.text();
+  const text = await resp.text();
   let data: any = {};
   try {
-    data = JSON.parse(raw);
+    data = JSON.parse(text);
   } catch {
     lastError = 'Non-JSON response from proxy';
     throw new Error(lastError);
@@ -34,22 +32,15 @@ export async function editImage(
 
   if (!resp.ok) {
     lastError = data?.error || `Status ${resp.status}`;
-    lastDebugMeta = data?.meta;
+    lastDebug = data?.meta;
     throw new Error(lastError);
   }
 
-  lastDebugMeta = data?.meta;
-  const imageUrl =
-    data?.imageUrl ||
-    data?.image_url ||
-    (Array.isArray(data?.images) ? data.images[0]?.url : undefined) ||
-    data?.url ||
-    (data?.data && Array.isArray(data.data) ? data.data[0]?.url : undefined);
-
-  if (!imageUrl) {
-    lastError = 'No imageUrl in success response';
+  lastDebug = data?.meta;
+  const dataUrl: string | undefined = data?.dataUrl;
+  if (!dataUrl) {
+    lastError = 'No dataUrl in success response';
     throw new Error(lastError);
   }
-
-  return imageUrl;
+  return dataUrl;
 }

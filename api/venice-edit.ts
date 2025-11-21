@@ -1,51 +1,45 @@
-// Venice Edit Proxy (Debug Enabled)
-// Env vars: VENICE_API_KEY (required)
-// Endpoint: https://api.venice.ai/api/v1/image/edit
-//
-// Client POST JSON: { prompt: string, imageUrl: string, debug?: boolean }
-// Optional: send ?debug=1 in query
-//
-// On success: { imageUrl, meta }
-// On failure: { error, status?, body?, meta }
+// Venice Edit Proxy (Binary-aware)
+// Env: VENICE_API_KEY required.
+// POST { prompt: string, imageUrl: string, debug?: boolean }
+// Response:
+//   { dataUrl: string, format: string, sizeBytes: number, meta: {...} }
+// Optionally you can later auto-pin to IPFS (not done here to keep latency down).
 
 export default async function handler(req: any, res: any) {
   const start = Date.now();
 
-  // Only POST allowed
   if (req.method !== 'POST') {
-    return respondJSON(res, 405, { error: 'Method Not Allowed' });
+    return json(res, 405, { error: 'Method Not Allowed' });
   }
 
   const VENICE_API_KEY = process.env.VENICE_API_KEY;
   if (!VENICE_API_KEY) {
-    return respondJSON(res, 500, { error: 'Missing VENICE_API_KEY environment variable' });
+    return json(res, 500, { error: 'Missing VENICE_API_KEY' });
   }
 
-  // Parse body and flags
   const body = req.body || {};
   const prompt: string | undefined = body.prompt;
   const imageUrl: string | undefined = body.imageUrl;
-  const debugFlag =
-    body.debug === true ||
-    req.query?.debug === '1' ||
-    req.query?.debug === 'true';
+  const debugFlag = body.debug === true || req.query?.debug === '1';
 
   if (!prompt || typeof prompt !== 'string') {
-    return respondJSON(res, 400, { error: 'Missing prompt' });
+    return json(res, 400, { error: 'Missing prompt' });
   }
   if (!imageUrl || typeof imageUrl !== 'string') {
-    return respondJSON(res, 400, { error: 'Missing imageUrl (current image is required for edit)' });
+    return json(res, 400, { error: 'Missing imageUrl' });
   }
 
-  const venicePayload = {
+  const payload = {
     prompt,
-    image: imageUrl // Venice accepts URL or base64 here.
+    image: imageUrl
   };
 
   let upstreamResp: Response | null = null;
-  let rawText = '';
-  let parsed: any = null;
   let upstreamError: any = null;
+  let arrayBuffer: ArrayBuffer | null = null;
+  let textAttempt = '';
+  let contentType = '';
+  let status = 0;
 
   try {
     upstreamResp = await fetch('https://api.venice.ai/api/v1/image/edit', {
@@ -53,16 +47,17 @@ export default async function handler(req: any, res: any) {
       headers: {
         Authorization: `Bearer ${VENICE_API_KEY}`,
         'Content-Type': 'application/json',
-        Accept: 'application/json'
+        Accept: '*/*'
       },
-      body: JSON.stringify(venicePayload)
+      body: JSON.stringify(payload)
     });
-
-    rawText = await upstreamResp.text();
-    try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      parsed = null;
+    status = upstreamResp.status;
+    contentType = upstreamResp.headers.get('content-type') || '';
+    // If image, read as binary. If not, read text for diagnostics.
+    if (contentType.startsWith('image/')) {
+      arrayBuffer = await upstreamResp.arrayBuffer();
+    } else {
+      textAttempt = await upstreamResp.text();
     }
   } catch (e: any) {
     upstreamError = e;
@@ -70,97 +65,81 @@ export default async function handler(req: any, res: any) {
 
   const durationMs = Date.now() - start;
 
-  // If network / fetch failed
   if (upstreamError) {
-    return respondJSON(res, 500, {
-      error: 'Network error calling Venice',
+    return json(res, 500, {
+      error: 'Network error',
       message: upstreamError?.message || String(upstreamError),
-      meta: buildMeta(debugFlag, venicePayload, null, null, rawText, durationMs)
+      meta: meta(debugFlag, payload, null, contentType, durationMs, status, textAttempt.length)
     });
   }
 
   if (!upstreamResp) {
-    return respondJSON(res, 500, {
-      error: 'Unknown upstream state (no response object)',
-      meta: buildMeta(debugFlag, venicePayload, null, null, rawText, durationMs)
+    return json(res, 500, {
+      error: 'No upstream response object',
+      meta: meta(debugFlag, payload, null, contentType, durationMs, status, textAttempt.length)
     });
   }
 
-  // Upstream not OK
   if (!upstreamResp.ok) {
-    return respondJSON(res, upstreamResp.status, {
+    // Non-image error body already in textAttempt
+    return json(res, status, {
       error: 'Venice upstream error',
-      status: upstreamResp.status,
-      body: rawText.slice(0, 1000),
-      meta: buildMeta(debugFlag, venicePayload, upstreamResp, parsed, rawText, durationMs)
+      status,
+      bodyPreview: textAttempt.slice(0, 1000),
+      meta: meta(debugFlag, payload, upstreamResp.headers, contentType, durationMs, status, textAttempt.length)
     });
   }
 
-  // Attempt normalization
-  let imageUrlResult: string | undefined;
-
-  // Possible shapes
-  if (typeof parsed?.image_url === 'string') imageUrlResult = parsed.image_url;
-  else if (typeof parsed?.imageUrl === 'string') imageUrlResult = parsed.imageUrl;
-  else if (typeof parsed?.url === 'string') imageUrlResult = parsed.url;
-  else if (typeof parsed?.image === 'string') {
-    // image may be URL or base64; detect:
-    if (parsed.image.startsWith('http')) {
-      imageUrlResult = parsed.image;
-    } else if (parsed.image.length > 200) {
-      imageUrlResult = `data:image/png;base64,${parsed.image}`;
-    }
-  } else if (Array.isArray(parsed?.images) && parsed.images[0]?.url) {
-    imageUrlResult = parsed.images[0].url;
-  } else if (parsed?.data && Array.isArray(parsed.data) && parsed.data[0]?.url) {
-    imageUrlResult = parsed.data[0].url;
-  }
-
-  if (!imageUrlResult) {
-    // Return debug dump
-    return respondJSON(res, 502, {
-      error: 'No usable image URL in Venice response',
-      responseSnippet: rawText.slice(0, 1200),
-      meta: buildMeta(debugFlag, venicePayload, upstreamResp, parsed, rawText, durationMs)
+  if (!arrayBuffer) {
+    // Upstream responded OK but not with image bytes (unexpected)
+    return json(res, 502, {
+      error: 'Expected binary image but got non-binary response',
+      contentType,
+      bodyPreview: textAttempt.slice(0, 1000),
+      meta: meta(debugFlag, payload, upstreamResp.headers, contentType, durationMs, status, textAttempt.length)
     });
   }
 
-  return respondJSON(res, 200, {
-    imageUrl: imageUrlResult,
-    meta: buildMeta(debugFlag, venicePayload, upstreamResp, parsed, rawText, durationMs)
+  // Convert binary to base64 data URL
+  const uint8 = new Uint8Array(arrayBuffer);
+  const base64 = Buffer.from(uint8).toString('base64');
+  const format = contentType.split('/')[1] || 'png';
+  const dataUrl = `data:${contentType};base64,${base64}`;
+
+  return json(res, 200, {
+    dataUrl,
+    format,
+    sizeBytes: uint8.byteLength,
+    meta: meta(debugFlag, payload, upstreamResp.headers, contentType, durationMs, status, textAttempt.length)
   });
 }
 
-function respondJSON(res: any, status: number, obj: any) {
+function json(res: any, status: number, obj: any) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify(obj));
 }
 
-function buildMeta(
+function meta(
   debugFlag: boolean,
   sentPayload: any,
-  resp: Response | null,
-  parsed: any,
-  rawText: string,
-  durationMs: number
+  headers: Headers | null,
+  contentType: string,
+  durationMs: number,
+  status: number,
+  textLen: number
 ) {
-  if (!debugFlag) {
-    return { durationMs };
-  }
-  const headersObj: Record<string, string> = {};
-  if (resp) {
-    resp.headers.forEach((v, k) => {
-      headersObj[k] = v;
-    });
+  if (!debugFlag) return { durationMs };
+  const h: Record<string, string> = {};
+  if (headers) {
+    headers.forEach((v, k) => (h[k] = v));
   }
   return {
     durationMs,
+    upstreamStatus: status,
+    upstreamContentType: contentType,
+    upstreamHeaders: h,
     sentPayload,
-    upstreamStatus: resp?.status,
-    upstreamHeaders: headersObj,
-    parsedKeys: parsed ? Object.keys(parsed) : null,
-    rawLength: rawText.length,
-    rawPreview: rawText.slice(0, 1200)
+    nonImageBodyLength: textLen
   };
 }
