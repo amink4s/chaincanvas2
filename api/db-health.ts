@@ -8,21 +8,23 @@ export default async function handler(req: any, res: any) {
     const turns = await query<{ game_id: string; turn_number: number }>`
       SELECT game_id, turn_number FROM turns ORDER BY created_at DESC LIMIT 5
     `;
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
+    respond(res, 200, {
       ok: true,
       envPresent: !!((globalThis as any)?.process?.env?.DATABASE_URL),
       gamesSample: games,
       turnsSample: turns
-    }));
+    });
   } catch (e: any) {
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
+    respond(res, 500, {
       ok: false,
       error: e?.message || String(e),
       envPresent: !!((globalThis as any)?.process?.env?.DATABASE_URL)
-    }));
+    });
   }
+}
+
+function respond(res: any, status: number, body: any) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify(body));
 }

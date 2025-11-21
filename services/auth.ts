@@ -12,17 +12,15 @@ function base64UrlToBase64(segment: string): string {
   return s;
 }
 
-// Edge-safe base64 decode: prefer atob, fallback to Buffer if available
+// Edge-safe decode: try atob then fallback to Buffer if available
 function decodeBase64ToString(b64: string): string {
   try {
     if (typeof atob === 'function') {
-      // atob returns binary string; convert to UTF-8
       const bin = atob(b64);
       const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
       return new TextDecoder().decode(bytes);
     }
   } catch {}
-  // Fallback for Node
   // eslint-disable-next-line no-undef
   return Buffer.from(b64, 'base64').toString('utf-8');
 }
@@ -33,8 +31,7 @@ export function decodeQuickAuthJwt(jwt: string): DecodedQuickAuth | null {
     if (parts.length !== 3) return null;
     const payloadB64 = base64UrlToBase64(parts[1]);
     const json = decodeBase64ToString(payloadB64);
-    const payload = JSON.parse(json);
-    return payload;
+    return JSON.parse(json);
   } catch (e: any) {
     console.error('[auth] JWT decode error:', e?.message || e);
     return null;
@@ -42,14 +39,10 @@ export function decodeQuickAuthJwt(jwt: string): DecodedQuickAuth | null {
 }
 
 export function extractFidFromAuthHeader(req: any): number | null {
-  try {
-    const auth = req.headers?.authorization || '';
-    const m = auth.match(/^Bearer\s+(.+)$/i);
-    if (!m) return null;
-    const decoded = decodeQuickAuthJwt(m[1]);
-    if (decoded?.sub && typeof decoded.sub === 'number') return decoded.sub;
-    return null;
-  } catch {
-    return null;
-  }
+  const auth = req.headers?.authorization || '';
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (!m) return null;
+  const decoded = decodeQuickAuthJwt(m[1]);
+  if (decoded?.sub && typeof decoded.sub === 'number') return decoded.sub;
+  return null;
 }

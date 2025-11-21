@@ -19,9 +19,7 @@ export default async function handler(req: any, res: any) {
     );
 
     const state = await fetchGameState(gameId);
-    if (!state) {
-      return respond(res, 500, { error: 'Failed to load state' });
-    }
+    if (!state) return respond(res, 500, { error: 'Failed to load state' });
 
     return respond(res, 200, {
       gameId,
