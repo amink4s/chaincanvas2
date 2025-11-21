@@ -23,10 +23,7 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error('[api/game-state] Unexpected error:', e?.message || e);
-    return respond(res, 500, {
-      error: 'Internal server error',
-      detail: e?.message || String(e)
-    });
+    return respond(res, 500, { error: 'Internal server error', detail: e?.message || String(e) });
   }
 }
 

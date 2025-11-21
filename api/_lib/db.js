@@ -5,12 +5,8 @@ let sqlClient = null;
 function getClient() {
   const env = (globalThis.process && globalThis.process.env) ? globalThis.process.env : {};
   const url = env.DATABASE_URL;
-  if (!url) {
-    throw new Error('DATABASE_URL not configured');
-  }
-  if (!sqlClient) {
-    sqlClient = neon(url);
-  }
+  if (!url) throw new Error('DATABASE_URL not configured');
+  if (!sqlClient) sqlClient = neon(url);
   return sqlClient;
 }
 
@@ -46,22 +42,15 @@ export async function assertTurnPermission(gameId, fid) {
   if (next_editor_fid !== fid) throw new Error('Not your turn');
 }
 
-export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt, imageUrl, veniceRequest, veniceResponse }) {
+export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt, imageUrl }) {
   const g = await query`SELECT current_turn, max_turns FROM games WHERE id = ${gameId} LIMIT 1`;
   if (!g.length) throw new Error('Game not found');
   const { current_turn, max_turns } = g[0];
   if (current_turn > max_turns) throw new Error('Game already completed');
 
   await query`
-    INSERT INTO turns (game_id, turn_number, editor_fid, passed_to_fid, prompt_text, image_url,
-                       venice_request_json, venice_response_json, state, created_at)
-    VALUES (
-      ${gameId}, ${current_turn}, ${editorFid}, ${passedToFid},
-      ${prompt}, ${imageUrl},
-      ${veniceRequest ? JSON.stringify(veniceRequest) : null},
-      ${veniceResponse ? JSON.stringify(veniceResponse) : null},
-      'finalized', NOW()
-    )
+    INSERT INTO turns (game_id, turn_number, editor_fid, passed_to_fid, prompt_text, image_url, state, created_at)
+    VALUES (${gameId}, ${current_turn}, ${editorFid}, ${passedToFid}, ${prompt}, ${imageUrl}, 'finalized', NOW())
   `;
 
   await query`
@@ -75,8 +64,5 @@ export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt
 }
 
 export async function setTurnIpfs(gameId, turnNumber, cid) {
-  await query`
-    UPDATE turns SET ipfs_cid = ${cid}
-    WHERE game_id = ${gameId} AND turn_number = ${turnNumber}
-  `;
+  await query`UPDATE turns SET ipfs_cid = ${cid} WHERE game_id = ${gameId} AND turn_number = ${turnNumber}`;
 }

@@ -14,11 +14,8 @@ export default async function handler(req, res) {
 
     const body = req.body || {};
     const { gameId, passedToFid, prompt, imageDataUrl } = body;
-
     if (!gameId || !passedToFid || !prompt || !imageDataUrl) {
-      return respond(res, 400, {
-        error: 'Missing required fields (gameId, passedToFid, prompt, imageDataUrl)'
-      });
+      return respond(res, 400, { error: 'Missing required fields (gameId, passedToFid, prompt, imageDataUrl)' });
     }
 
     await assertTurnPermission(gameId, callerFid);

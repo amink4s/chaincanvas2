@@ -33,7 +33,7 @@ export function decodeQuickAuthJwt(jwt) {
 
 export function extractFidFromAuthHeader(req) {
   const auth = req.headers?.authorization || '';
-  const m = auth.match(/^Bearer\s+(.+)$/i);
+  const m = auth.match(/^Bearer\\s+(.+)$/i);
   if (!m) return null;
   const decoded = decodeQuickAuthJwt(m[1]);
   if (decoded?.sub && typeof decoded.sub === 'number') return decoded.sub;
