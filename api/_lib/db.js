@@ -73,7 +73,7 @@ export async function assertTurnPermission(gameId, fid) {
   // Allow initial editor if next_editor_fid still null and on first turn
   if (next_editor_fid == null && current_turn === 1) return;
   if (next_editor_fid == null) throw new Error('No editor assigned');
-  if (next_editor_fid !== fid) throw new Error('Not your turn');
+  if (String(next_editor_fid) !== String(fid)) throw new Error(`Not your turn (expected ${next_editor_fid}, got ${fid})`);
 }
 
 export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt, imageUrl, ipfsCid = null }) {
