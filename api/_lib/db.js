@@ -16,7 +16,13 @@ function getClient() {
 
 export async function query(strings, ...values) {
   const client = getClient();
-  return await client(strings, ...values);
+  console.log('[db] query:', strings, values);
+  try {
+    return await client(strings, ...values);
+  } catch (e) {
+    console.error('[db] query error:', e.message, 'Query:', strings, 'Values:', values);
+    throw e;
+  }
 }
 
 export async function ensureUser(fid, username = null, displayName = null, pfpUrl = null) {
