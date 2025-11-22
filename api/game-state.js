@@ -37,7 +37,7 @@ export default async function handler(req, res) {
     ) {
       await query`
         UPDATE games
-        SET expiry_timestamp = NOW() + interval '${TURN_WINDOW_MINUTES} minutes',
+        SET expiry_timestamp = NOW() + ${TURN_WINDOW_MINUTES + ' minutes'}::interval,
             updated_at = NOW()
         WHERE id = ${gameId}::uuid
       `;
