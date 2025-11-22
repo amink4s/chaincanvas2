@@ -29,9 +29,18 @@ export default async function handler(req: any, res: any) {
     return json(res, 400, { error: 'Missing imageUrl' });
   }
 
+  // Strip data URI prefix if present (Venice expects raw base64)
+  let imageBase64 = imageUrl;
+  if (imageUrl.startsWith('data:')) {
+    const commaIdx = imageUrl.indexOf(',');
+    if (commaIdx !== -1) {
+      imageBase64 = imageUrl.slice(commaIdx + 1);
+    }
+  }
+
   const payload = {
     prompt,
-    image: imageUrl
+    image: imageBase64
   };
 
   let upstreamResp: Response | null = null;
