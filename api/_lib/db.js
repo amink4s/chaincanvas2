@@ -22,7 +22,7 @@ export async function query(strings, ...values) {
 export async function ensureUser(fid, username = null, displayName = null, pfpUrl = null) {
   await query`
     INSERT INTO users (fid, username, display_name, pfp_url, last_seen_at, profile_last_refreshed_at, created_at, updated_at)
-    VALUES (${fid}, ${username}, ${displayName}, ${pfpUrl}, NOW(), NOW(), NOW(), NOW())
+    VALUES (${fid}::bigint, ${username}::text, ${displayName}::text, ${pfpUrl}::text, NOW(), NOW(), NOW(), NOW())
     ON CONFLICT (fid) DO UPDATE
       SET username = COALESCE(EXCLUDED.username, users.username),
           display_name = COALESCE(EXCLUDED.display_name, users.display_name),
@@ -41,7 +41,7 @@ export async function getOrCreateTodayGame(seedImageUrl, seedPrompt, initialEdit
   const inserted = await query`
     INSERT INTO games (day_date, seed_image_url, seed_prompt, status, current_turn, max_turns,
                        expiry_timestamp, next_editor_fid)
-    VALUES (${today}::date, ${seedImageUrl}, ${seedPrompt}, 'active', 1, 10,
+    VALUES (${today}::date, ${seedImageUrl}::text, ${seedPrompt}::text, 'active', 1, 10,
             NOW() + interval '30 minutes', ${initialEditorFid}::bigint)
     RETURNING id
   `;
@@ -49,17 +49,17 @@ export async function getOrCreateTodayGame(seedImageUrl, seedPrompt, initialEdit
 }
 
 export async function fetchGameState(gameId) {
-  const gameRows = await query`SELECT * FROM games WHERE id = ${gameId} LIMIT 1`;
+  const gameRows = await query`SELECT * FROM games WHERE id = ${gameId}::uuid LIMIT 1`;
   if (!gameRows.length) return null;
   const turns = await query`
-    SELECT * FROM turns WHERE game_id = ${gameId} ORDER BY turn_number ASC
+    SELECT * FROM turns WHERE game_id = ${gameId}::uuid ORDER BY turn_number ASC
   `;
   return { game: gameRows[0], turns };
 }
 
 export async function assertTurnPermission(gameId, fid) {
   const rows = await query`
-    SELECT next_editor_fid, status, current_turn FROM games WHERE id = ${gameId} LIMIT 1
+    SELECT next_editor_fid, status, current_turn FROM games WHERE id = ${gameId}::uuid LIMIT 1
   `;
   if (!rows.length) throw new Error('Game not found');
   const { next_editor_fid, status, current_turn } = rows[0];
@@ -72,7 +72,7 @@ export async function assertTurnPermission(gameId, fid) {
 
 export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt, imageUrl, ipfsCid = null }) {
   const g = await query`
-    SELECT current_turn, max_turns FROM games WHERE id = ${gameId} LIMIT 1
+    SELECT current_turn, max_turns FROM games WHERE id = ${gameId}::uuid LIMIT 1
   `;
   if (!g.length) throw new Error('Game not found');
   const { current_turn, max_turns } = g[0];
@@ -81,23 +81,23 @@ export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt
   await query`
     INSERT INTO turns (game_id, turn_number, editor_fid, passed_to_fid, prompt_text, image_url, ipfs_cid,
                        state, created_at)
-    VALUES (${gameId}, ${current_turn}, ${editorFid}, ${passedToFid}, ${prompt}, ${imageUrl}, ${ipfsCid},
+    VALUES (${gameId}::uuid, ${current_turn}::smallint, ${editorFid}::bigint, ${passedToFid}::bigint, ${prompt}::text, ${imageUrl}::text, ${ipfsCid}::text,
             'finalized', NOW())
   `;
 
   await query`
     UPDATE games
     SET current_turn = current_turn + 1,
-        next_editor_fid = ${passedToFid},
+        next_editor_fid = ${passedToFid}::bigint,
         expiry_timestamp = NOW() + interval '30 minutes',
         updated_at = NOW()
-    WHERE id = ${gameId}
+    WHERE id = ${gameId}::uuid
   `;
 }
 
 export async function setTurnIpfs(gameId, turnNumber, cid) {
   await query`
-    UPDATE turns SET ipfs_cid = ${cid}
-    WHERE game_id = ${gameId} AND turn_number = ${turnNumber}
+    UPDATE turns SET ipfs_cid = ${cid}::text
+    WHERE game_id = ${gameId}::uuid AND turn_number = ${turnNumber}::smallint
   `;
 }
