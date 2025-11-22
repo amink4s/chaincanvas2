@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     await ensureUser(callerFid);
 
     const body = req.body || {};
-    const { gameId, passedToFid, prompt, imageDataUrl } = body;
+    const { gameId, passedToFid, prompt, imageDataUrl, ipfsCid } = body;
 
     if (!gameId || !passedToFid || !prompt || !imageDataUrl) {
       return respond(res, 400, {
@@ -26,12 +26,16 @@ export default async function handler(req, res) {
 
     await assertTurnPermission(gameId, callerFid);
 
+    // Use IPFS gateway URL if available, otherwise fallback to data URL
+    const finalImageUrl = ipfsCid ? `https://ipfs.io/ipfs/${ipfsCid}` : imageDataUrl;
+
     await insertTurnAndPass({
       gameId,
       editorFid: callerFid,
       passedToFid: Number(passedToFid),
       prompt,
-      imageUrl: imageDataUrl
+      imageUrl: finalImageUrl,
+      ipfsCid
     });
 
     const updated = await fetchGameState(gameId);

@@ -50,6 +50,7 @@ const GamePrototype: React.FC = () => {
   const [ipfsStatus, setIpfsStatus] = useState<string | null>(null);
   const [pinning, setPinning] = useState(false);
   const [lastPinnedUrl, setLastPinnedUrl] = useState<string | null>(null);
+  const [lastPinnedCid, setLastPinnedCid] = useState<string | null>(null);
   const [lastPromptForCast, setLastPromptForCast] = useState<string>('');
   const [showShareModal, setShowShareModal] = useState(false);
 
@@ -171,6 +172,7 @@ const GamePrototype: React.FC = () => {
     setShowDebug(false);
     setDebugMeta(null);
     setLastPinnedUrl(null);
+    setLastPinnedCid(null);
     setIpfsStatus(null);
     setIsGenerating(true);
 
@@ -197,8 +199,8 @@ const GamePrototype: React.FC = () => {
         body: JSON.stringify({
           dataUrl: lastDataUrl,
           prompt: inputPrompt,
-            gameId: serverState.gameId,
-            turnNumber: serverState.game.current_turn
+          gameId: serverState.gameId,
+          turnNumber: serverState.game.current_turn
         })
       });
       const data = await resp.json().catch(() => ({}));
@@ -207,6 +209,7 @@ const GamePrototype: React.FC = () => {
       } else {
         setIpfsStatus(`Pinned: ${data.ipfsCid}`);
         setLastPinnedUrl(data.gatewayUrl || null);
+        setLastPinnedCid(data.ipfsCid || null);
       }
     } catch (e: any) {
       setIpfsStatus('Pin network error: ' + (e?.message || String(e)));
@@ -236,7 +239,8 @@ const GamePrototype: React.FC = () => {
           gameId: serverState.gameId,
           passedToFid: selectedNextUser.fid,
           prompt: inputPrompt,
-          imageDataUrl: lastDataUrl
+          imageDataUrl: lastDataUrl,
+          ipfsCid: lastPinnedCid
         })
       });
       const text = await resp.text();
@@ -326,9 +330,8 @@ const GamePrototype: React.FC = () => {
         </div>
         <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
           <Timer
-            className={`w-4 h-4 ${
-              deadline && Date.now() > deadline ? 'text-red-500' : 'text-green-400'
-            }`}
+            className={`w-4 h-4 ${deadline && Date.now() > deadline ? 'text-red-500' : 'text-green-400'
+              }`}
           />
           <span className="text-sm font-mono text-slate-200">{timeLeft}</span>
         </div>
@@ -451,11 +454,10 @@ const GamePrototype: React.FC = () => {
                       <button
                         key={u.fid}
                         onClick={() => selectNextEditor(u)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          selectedNextUser?.fid === u.fid
+                        className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${selectedNextUser?.fid === u.fid
                             ? 'bg-indigo-600/20 text-white'
                             : 'text-slate-300 hover:bg-slate-800'
-                        }`}
+                          }`}
                       >
                         <img
                           src={u.pfpUrl || 'https://placehold.co/32x32?text=U'}

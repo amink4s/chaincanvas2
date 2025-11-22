@@ -70,7 +70,7 @@ export async function assertTurnPermission(gameId, fid) {
   if (next_editor_fid !== fid) throw new Error('Not your turn');
 }
 
-export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt, imageUrl }) {
+export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt, imageUrl, ipfsCid = null }) {
   const g = await query`
     SELECT current_turn, max_turns FROM games WHERE id = ${gameId} LIMIT 1
   `;
@@ -79,9 +79,9 @@ export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt
   if (current_turn > max_turns) throw new Error('Game already completed');
 
   await query`
-    INSERT INTO turns (game_id, turn_number, editor_fid, passed_to_fid, prompt_text, image_url,
+    INSERT INTO turns (game_id, turn_number, editor_fid, passed_to_fid, prompt_text, image_url, ipfs_cid,
                        state, created_at)
-    VALUES (${gameId}, ${current_turn}, ${editorFid}, ${passedToFid}, ${prompt}, ${imageUrl},
+    VALUES (${gameId}, ${current_turn}, ${editorFid}, ${passedToFid}, ${prompt}, ${imageUrl}, ${ipfsCid},
             'finalized', NOW())
   `;
 

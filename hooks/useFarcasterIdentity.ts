@@ -30,9 +30,16 @@ export function useFarcasterIdentity() {
       try {
         const { token } = await sdk.quickAuth.getToken();
         setStatus('token');
+
+        // Expose token globally for legacy/prototype components
+        (window as any).QUICKAUTH_TOKEN = token;
+
         const payload = decodeJwt(token);
         if (payload?.sub && typeof payload.sub === 'number') {
           setFid(payload.sub);
+          (window as any).CURRENT_FID = payload.sub;
+          // Signal that auth is ready
+          window.dispatchEvent(new Event('quickauth-ready'));
         } else {
           setStatus('error');
         }
