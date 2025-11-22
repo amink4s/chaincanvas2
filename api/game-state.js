@@ -35,9 +35,11 @@ export default async function handler(req, res) {
       state.game.expiry_timestamp &&
       new Date(state.game.expiry_timestamp).getTime() < Date.now()
     ) {
+      // Release the turn if expired
       await query`
         UPDATE games
-        SET expiry_timestamp = NOW() + ${TURN_WINDOW_MINUTES + ' minutes'}::interval,
+        SET next_editor_fid = NULL,
+            expiry_timestamp = NULL,
             updated_at = NOW()
         WHERE id = ${gameId}::uuid
       `;
