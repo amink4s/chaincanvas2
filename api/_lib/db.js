@@ -86,9 +86,9 @@ export async function insertTurnAndPass({ gameId, editorFid, passedToFid, prompt
 
   await query`
     INSERT INTO turns (game_id, turn_number, editor_fid, passed_to_fid, prompt_text, image_url, ipfs_cid,
-                       state, created_at)
+                       state, created_at, finalized_at)
     VALUES (${gameId}::uuid, ${current_turn}::smallint, ${editorFid}::bigint, ${passedToFid}::bigint, ${prompt}::text, ${imageUrl}::text, ${ipfsCid}::text,
-            'finalized', NOW())
+            'finalized', NOW(), NOW())
   `;
 
   await query`
