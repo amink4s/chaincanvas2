@@ -23,6 +23,7 @@
         "subtitle": "Collaborative daily image mutation game",
         "ogDescription":"Collaborative daily image mutation game",
         "ogImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
+        "ogTitle": "Chain Reaction",
         "webhookUrl": "https://chaincanvas-xi.vercel.app/api/webhook"
       },
     "frame": {

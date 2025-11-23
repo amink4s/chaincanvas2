@@ -149,18 +149,198 @@ const GamePrototype: React.FC = () => {
 
   const myFid = getMyFidFromContext(serverState?.callerFid ?? null);
   const nextFid: number | null =
-    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4">
-      <p className="text-white text-sm font-medium line-clamp-2">
-        "{currentPrompt || (lastDataUrl ? inputPrompt : '')}"
-      </p>
-    </div>
-        </div >
+    serverState?.game?.next_editor_fid != null
+      ? (Number(serverState.game.next_editor_fid) || null)
+      : null;
 
-{
-  isMyTurn?(
-          <div className = "space-y-5" >
-      {/* Step 1 */ }
-      < div className = "space-y-2" >
+  const isMyTurn = Boolean(myFid != null && nextFid != null && myFid === nextFid);
+
+  const handleGenerate = async () => {
+    if (!inputPrompt.trim() || isGenerating || !serverState || !isMyTurn) return;
+    setErrorMsg(null);
+    setShowDebug(false);
+    setDebugMeta(null);
+    setLastPinnedUrl(null);
+    setLastPinnedCid(null);
+    setIpfsStatus(null);
+    setIsGenerating(true);
+
+    try {
+      const dataUrl = await editImage(inputPrompt, currentImage, true);
+      setLastDataUrl(dataUrl);
+    } catch (e: any) {
+      const err = getLastVeniceError() || e.message || 'Unknown error';
+      setErrorMsg(err);
+      setDebugMeta(getLastVeniceDebug());
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const pinToIpfs = async () => {
+    if (!lastDataUrl || !serverState) return;
+    setPinning(true);
+    setIpfsStatus(null);
+    try {
+      const resp = await fetch('/api/pin-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataUrl: lastDataUrl,
+          prompt: inputPrompt,
+          gameId: serverState.gameId,
+          turnNumber: serverState.game.current_turn
+        })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setIpfsStatus(`Pin failed: ${data?.error || resp.status}`);
+      } else {
+        setIpfsStatus(`Pinned: ${data.ipfsCid}`);
+        setLastPinnedUrl(data.gatewayUrl || null);
+        setLastPinnedCid(data.ipfsCid || null);
+      }
+    } catch (e: any) {
+      setIpfsStatus('Pin network error: ' + (e?.message || String(e)));
+    } finally {
+      setPinning(false);
+    }
+  };
+
+  const selectNextEditor = (u: SearchUser) => {
+    setSelectedNextUser(u);
+    setNextEditorQuery(u.username);
+    setDropdownOpen(false);
+  };
+
+  const confirmTurn = async () => {
+    if (!selectedNextUser || !lastDataUrl || !serverState || !isMyTurn) return;
+    setLastPromptForCast(inputPrompt);
+    const token = getAuthToken();
+    try {
+      const resp = await fetch('/api/submit-turn', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          gameId: serverState.gameId,
+          passedToFid: selectedNextUser.fid,
+          prompt: inputPrompt,
+          imageDataUrl: lastDataUrl,
+          ipfsCid: lastPinnedCid
+        })
+      });
+      const text = await resp.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch { /* ignore */ }
+      if (!resp.ok) {
+        setErrorMsg(data?.error || text.slice(0, 100) || 'Submit failed');
+        return;
+      }
+      setLastDataUrl(null);
+      setInputPrompt('');
+      await loadServerState();
+      setShowShareModal(true);
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Submit error');
+    }
+  };
+
+  const buildCastText = () => {
+    if (!selectedNextUser) return '';
+    return `I just mutated the daily image with "${lastPromptForCast}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n${MINI_APP_URL}`;
+  };
+
+  const composeCast = async () => {
+    if (!selectedNextUser) return;
+    const text = buildCastText();
+    let embeds: [string] | [string, string] | undefined;
+    if (lastPinnedUrl) embeds = [lastPinnedUrl, MINI_APP_URL];
+    else embeds = [MINI_APP_URL];
+    try {
+      await sdk.actions.composeCast?.({ text, embeds });
+      setShowShareModal(false);
+    } catch {
+      alert('Composer failed. Copy manually:\n\n' + text);
+    }
+  };
+
+  if (loading)
+    return (
+      <div className="p-6 text-center text-slate-300">
+        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3" />
+        Loading game…
+      </div>
+    );
+
+  if (loadError || !serverState)
+    return (
+      <div className="p-6 text-center text-red-400">
+        Load error: {loadError}
+        <div>
+          <button
+            onClick={loadServerState}
+            className="mt-4 px-4 py-2 bg-slate-700 rounded text-sm text-white"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+
+  const turnCount = serverState.game.current_turn;
+  const maxTurns = serverState.game.max_turns;
+  const deadline = serverState.game.expiry_timestamp
+    ? new Date(serverState.game.expiry_timestamp).getTime()
+    : null;
+  const timeLeft = deadline ? formatTime(deadline) : 'Open';
+
+  function formatTime(deadlineMs: number) {
+    const diff = deadlineMs - Date.now();
+    if (diff <= 0) return 'Expired';
+    const m = Math.floor(diff / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    return `${m}m ${s}s`;
+  }
+
+  return (
+    <div className="h-full flex flex-col max-w-md mx-auto bg-black border-x border-slate-800 relative shadow-2xl overflow-y-auto">
+      {/* Header */}
+      <div className="bg-slate-900 p-4 flex justify-between items-center border-b border-slate-800">
+        <div className="flex flex-col">
+          <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">
+            Round
+          </span>
+          <span className="text-xl font-black text-indigo-400">
+            {turnCount} / {maxTurns}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+          <Timer
+            className={`w-4 h-4 ${deadline && Date.now() > deadline ? 'text-red-500' : 'text-green-400'
+              }`}
+          />
+          <span className="text-sm font-mono text-slate-200">{timeLeft}</span>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {/* Image */}
+        <div className="relative rounded-xl overflow-hidden border-2 border-slate-700 shadow-lg bg-slate-900 aspect-square flex items-center justify-center">
+          <img src={currentImage} alt="Current State" className="w-full h-full object-cover" />
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4">
+            <p className="text-white text-sm font-medium line-clamp-2">
+              "{currentPrompt || (lastDataUrl ? inputPrompt : '')}"
+            </p>
+          </div>
+        </div>
+
+        {isMyTurn ? (
+          <div className="space-y-5">
+            {/* Step 1 */}
+            <div className="space-y-2">
               <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
                 1. Make your edit
               </label>
@@ -181,48 +361,46 @@ const GamePrototype: React.FC = () => {
                   {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
                 </button>
               </div>
-              { errorMsg && (
-    <div className="text-xs bg-red-500/15 border border-red-600/40 text-red-300 rounded-md px-3 py-2 space-y-2">
-      <div className="flex items-center gap-2">
-        <Bug className="w-4 h-4" />
-        <span>{errorMsg}</span>
-      </div>
-      <button
-        onClick={() => setShowDebug(d => !d)}
-        className="text-[10px] underline text-red-200 hover:text-red-100"
-      >
-        {showDebug ? 'Hide debug' : 'Show debug'}
-      </button>
-      {showDebug && debugMeta && (
-        <pre className="max-h-64 overflow-auto text-[10px] bg-black/60 border border-red-900/40 p-2 rounded">
-          {JSON.stringify(debugMeta, null, 2)}
-        </pre>
-      )}
-    </div>
-  )}
-{
-  lastDataUrl && !errorMsg && (
-    <div className="flex items-center gap-2">
-      <button
-        onClick={pinToIpfs}
-        disabled={pinning}
-        className="text-xs flex items-center gap-2 px-3 py-2 rounded-md bg-slate-800 border border-slate-700 hover:border-indigo-500/60 text-slate-300 disabled:opacity-50"
-      >
-        <CloudUpload className="w-4 h-4" />
-        {pinning ? 'Pinning...' : 'Pin to IPFS'}
-      </button>
-      {ipfsStatus && (
-        <span className="text-[10px] text-indigo-300">
-          {ipfsStatus}
-        </span>
-      )}
-    </div>
-  )
-}
-            </div >
+              {errorMsg && (
+                <div className="text-xs bg-red-500/15 border border-red-600/40 text-red-300 rounded-md px-3 py-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Bug className="w-4 h-4" />
+                    <span>{errorMsg}</span>
+                  </div>
+                  <button
+                    onClick={() => setShowDebug(d => !d)}
+                    className="text-[10px] underline text-red-200 hover:text-red-100"
+                  >
+                    {showDebug ? 'Hide debug' : 'Show debug'}
+                  </button>
+                  {showDebug && debugMeta && (
+                    <pre className="max-h-64 overflow-auto text-[10px] bg-black/60 border border-red-900/40 p-2 rounded">
+                      {JSON.stringify(debugMeta, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              )}
+              {lastDataUrl && !errorMsg && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={pinToIpfs}
+                    disabled={pinning}
+                    className="text-xs flex items-center gap-2 px-3 py-2 rounded-md bg-slate-800 border border-slate-700 hover:border-indigo-500/60 text-slate-300 disabled:opacity-50"
+                  >
+                    <CloudUpload className="w-4 h-4" />
+                    {pinning ? 'Pinning...' : 'Pin to IPFS'}
+                  </button>
+                  {ipfsStatus && (
+                    <span className="text-[10px] text-indigo-300">
+                      {ipfsStatus}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
 
-  {/* Step 2 */ }
-  < div className = "space-y-2" ref = { dropdownRef } >
+            {/* Step 2 */}
+            <div className="space-y-2" ref={dropdownRef}>
               <label className="text-sm text-slate-400 font-semibold uppercase tracking-wider">
                 2. Pass the torch
               </label>
@@ -260,8 +438,8 @@ const GamePrototype: React.FC = () => {
                         key={u.fid}
                         onClick={() => selectNextEditor(u)}
                         className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${selectedNextUser?.fid === u.fid
-                            ? 'bg-indigo-600/20 text-white'
-                            : 'text-slate-300 hover:bg-slate-800'
+                          ? 'bg-indigo-600/20 text-white'
+                          : 'text-slate-300 hover:bg-slate-800'
                           }`}
                       >
                         <img
@@ -291,75 +469,75 @@ const GamePrototype: React.FC = () => {
                   </div>
                 )}
               </div>
-            </div >
-
-  {/* Step 3 */ }
-  < button
-onClick = { confirmTurn }
-disabled = {!selectedNextUser || !lastDataUrl || !inputPrompt.trim()}
-className = "w-full bg-white text-black font-bold py-4 rounded-xl shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)] hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-  >
-  Finalize & Pass Turn < Send className = "w-4 h-4" />
-            </button >
-          </div >
-        ) : (
-  <div className="flex flex-col items-center justify-center py-12 px-4 text-center space-y-4 bg-slate-900/50 rounded-xl border border-slate-800 border-dashed">
-    <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
-      <Lock className="w-8 h-8 text-slate-500" />
-    </div>
-    <div>
-      <h3 className="text-lg font-bold text-white">Not Your Turn</h3>
-      <p className="text-slate-400 text-sm max-w-[220px] mx-auto mt-2">
-        Waiting for the current editor to finish. (Server-controlled)
-      </p>
-    </div>
-  </div>
-)}
-      </div >
-
-  { showShareModal && selectedNextUser && (
-    <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 space-y-6">
-        <div className="text-center space-y-2">
-          <div className="w-12 h-12 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mx-auto">
-            <Camera className="w-6 h-6" />
-          </div>
-          <h3 className="text-xl font-bold text-white">Turn Complete!</h3>
-          <p className="text-slate-400 text-sm">Compose a cast to notify @{selectedNextUser.username}.</p>
-        </div>
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <p className="text-slate-300 text-sm font-mono whitespace-pre-line">
-            {`I just mutated the daily image with "${lastPromptForCast}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n${MINI_APP_URL}`}
-          </p>
-          <div className="mt-3 rounded-md overflow-hidden h-32 w-full bg-black">
-            <img
-              src={lastDataUrl || currentImage}
-              className="w-full h-full object-cover opacity-80"
-              alt="Turn Result"
-            />
-          </div>
-          {lastPinnedUrl && (
-            <div className="mt-2 text-[11px] text-slate-400">
-              Image embed: {lastPinnedUrl}
             </div>
-          )}
-        </div>
-        <button
-          onClick={composeCast}
-          className="w-full bg-[#7C65C1] hover:bg-[#6952A3] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-        >
-          Open Composer
-        </button>
-        <button
-          onClick={() => setShowShareModal(false)}
-          className="w-full text-slate-500 text-sm py-2 hover:text-slate-300"
-        >
-          Close
-        </button>
+
+            {/* Step 3 */}
+            <button
+              onClick={confirmTurn}
+              disabled={!selectedNextUser || !lastDataUrl || !inputPrompt.trim()}
+              className="w-full bg-white text-black font-bold py-4 rounded-xl shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)] hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+            >
+              Finalize & Pass Turn <Send className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center space-y-4 bg-slate-900/50 rounded-xl border border-slate-800 border-dashed">
+            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
+              <Lock className="w-8 h-8 text-slate-500" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">Not Your Turn</h3>
+              <p className="text-slate-400 text-sm max-w-[220px] mx-auto mt-2">
+                Waiting for the current editor to finish. (Server-controlled)
+              </p>
+            </div>
+          </div>
+        )}
       </div>
+
+      {showShareModal && selectedNextUser && (
+        <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 space-y-6">
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mx-auto">
+                <Camera className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold text-white">Turn Complete!</h3>
+              <p className="text-slate-400 text-sm">Compose a cast to notify @{selectedNextUser.username}.</p>
+            </div>
+            <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+              <p className="text-slate-300 text-sm font-mono whitespace-pre-line">
+                {`I just mutated the daily image with "${lastPromptForCast}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n${MINI_APP_URL}`}
+              </p>
+              <div className="mt-3 rounded-md overflow-hidden h-32 w-full bg-black">
+                <img
+                  src={lastDataUrl || currentImage}
+                  className="w-full h-full object-cover opacity-80"
+                  alt="Turn Result"
+                />
+              </div>
+              {lastPinnedUrl && (
+                <div className="mt-2 text-[11px] text-slate-400">
+                  Image embed: {lastPinnedUrl}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={composeCast}
+              className="w-full bg-[#7C65C1] hover:bg-[#6952A3] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+            >
+              Open Composer
+            </button>
+            <button
+              onClick={() => setShowShareModal(false)}
+              className="w-full text-slate-500 text-sm py-2 hover:text-slate-300"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
-  )}
-    </div >
   );
 };
 
