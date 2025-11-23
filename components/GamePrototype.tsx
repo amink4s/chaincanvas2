@@ -279,8 +279,10 @@ const GamePrototype: React.FC = () => {
     const text = buildCastText();
     let embeds: [string] | [string, string] | undefined;
 
-    if (imageUrl) embeds = [imageUrl, MINI_APP_URL];
-    else embeds = [MINI_APP_URL];
+    if (imageUrl) {
+      const shareUrl = `${MINI_APP_URL}api/share?img=${encodeURIComponent(imageUrl)}&prompt=${encodeURIComponent(lastPromptForCast)}`;
+      embeds = [shareUrl, MINI_APP_URL];
+    } else embeds = [MINI_APP_URL];
 
     try {
       await sdk.actions.composeCast?.({ text, embeds });
