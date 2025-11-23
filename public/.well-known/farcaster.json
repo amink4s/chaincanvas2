@@ -7,7 +7,7 @@
   "miniapp": {
     "version": "1",
     "name": "Chain Reaction",
-    "description": "image mutation game",
+    "description": "Collaborative daily image mutation game",
     "iconUrl": "https://chaincanvas-xi.vercel.app/icon.png",
     "homeUrl": "https://chaincanvas-xi.vercel.app/",
     "canonicalDomain": "chaincanvas-xi.vercel.app",
@@ -29,7 +29,7 @@
       "collaboration"
     ],
     "primaryCategory": "games",
-    "subtitle": "Collaborative daily image mutation game",
+    "subtitle": "image mutation game",
     "ogDescription": "Collaborative daily image mutation game",
     "ogImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
     "ogTitle": "Chain Reaction",
@@ -38,7 +38,7 @@
   "frame": {
     "version": "1",
     "name": "Chain Reaction",
-    "description": "image mutation game",
+    "description": "Collaborative daily image mutation game",
     "iconUrl": "https://chaincanvas-xi.vercel.app/icon.png",
     "homeUrl": "https://chaincanvas-xi.vercel.app/",
     "canonicalDomain": "chaincanvas-xi.vercel.app",
@@ -60,7 +60,7 @@
       "collaboration"
     ],
     "primaryCategory": "games",
-    "subtitle": "Collaborative daily image mutation game",
+    "subtitle": "image mutation game",
     "ogDescription": "Collaborative daily image mutation game",
     "ogImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
     "ogTitle": "Chain Reaction",
