@@ -12,12 +12,17 @@
         "homeUrl": "https://chaincanvas-xi.vercel.app/",
         "canonicalDomain": "chaincanvas-xi.vercel.app",
         "splashImageUrl": "https://chaincanvas-xi.vercel.app/splash.png",
+        "heroImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
         "splashBackgroundColor": "#0F172A",
         "buttonTitle": "Chain Reaction",
         "imageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
         "requiredCapabilities": ["actions.ready", "actions.signIn"],
         "requiredChains": ["eip155:8453"],
         "tags": ["art", "game", "collaboration"],
+        "primaryCategory": "games",
+        "subtitle": "Collaborative daily image mutation game",
+        "ogDescription":"Collaborative daily image mutation game",
+        "ogImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
         "webhookUrl": "https://chaincanvas-xi.vercel.app/api/webhook"
       },
     "frame": {
