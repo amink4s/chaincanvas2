@@ -19,7 +19,7 @@ function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   return (...args: Parameters<T>) => {
     if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
@@ -203,6 +203,9 @@ export default function GamePrototype() {
     serverState?.game?.next_editor_fid != null
       ? (Number(serverState.game.next_editor_fid) || null)
       : null;
+
+  // Debug logging
+  console.log('Turn check:', { myFid, nextFid, callerFid: serverState?.callerFid });
 
   const isMyTurn = Boolean(myFid != null && nextFid != null && myFid === nextFid);
 
