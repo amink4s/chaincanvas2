@@ -39,15 +39,26 @@ export async function ensureUser(fid, username = null, displayName = null, pfpUr
   `;
 }
 
-export async function getOrCreateTodayGame(seedImageUrl, seedPrompt, initialEditorFid) {
+export async function getDailySeed(dateStr) {
+  const rows = await query`
+    SELECT image_url, prompt FROM daily_seeds WHERE day_date = ${dateStr}::date LIMIT 1
+  `;
+  return rows[0] || null;
+}
+
+export async function getOrCreateTodayGame(initialEditorFid, defaultSeedImage, defaultSeedPrompt) {
   const today = new Date().toISOString().slice(0, 10);
   const existing = await query`SELECT id FROM games WHERE day_date = ${today}::date LIMIT 1`;
   if (existing.length) return existing[0].id;
 
+  const seed = await getDailySeed(today);
+  const finalImage = seed?.image_url || defaultSeedImage;
+  const finalPrompt = seed?.prompt || defaultSeedPrompt;
+
   const inserted = await query`
     INSERT INTO games (day_date, seed_image_url, seed_prompt, status, current_turn, max_turns,
                        expiry_timestamp, next_editor_fid)
-    VALUES (${today}::date, ${seedImageUrl}::text, ${seedPrompt}::text, 'active', 1, 10,
+    VALUES (${today}::date, ${finalImage}::text, ${finalPrompt}::text, 'active', 1, 10,
             NOW() + interval '30 minutes', ${initialEditorFid}::bigint)
     RETURNING id
   `;
