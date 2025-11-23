@@ -1,9 +1,3 @@
-export enum TabView {
-  BLUEPRINT = 'BLUEPRINT',
-  PROTOTYPE = 'PROTOTYPE',
-  STACK = 'STACK'
-}
-
 export interface FarcasterUser {
   fid: number;
   username: string;
