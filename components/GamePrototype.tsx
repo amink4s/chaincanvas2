@@ -269,11 +269,19 @@ const GamePrototype: React.FC = () => {
   };
 
   const composeCast = async () => {
-    if (!selectedNextUser) return;
+    if (!selectedNextUser || !serverState) return;
+
+    // Get the latest turn's image URL from server state as the source of truth
+    const turns = serverState.turns;
+    const latestTurn = turns.length > 0 ? turns[turns.length - 1] : null;
+    const imageUrl = latestTurn?.image_url || lastPinnedUrl;
+
     const text = buildCastText();
     let embeds: [string] | [string, string] | undefined;
-    if (lastPinnedUrl) embeds = [lastPinnedUrl, MINI_APP_URL];
+
+    if (imageUrl) embeds = [imageUrl, MINI_APP_URL];
     else embeds = [MINI_APP_URL];
+
     try {
       await sdk.actions.composeCast?.({ text, embeds });
       setShowShareModal(false);
