@@ -26,20 +26,29 @@ export default async function handler(req, res) {
     if (!state) return respond(res, 500, { error: 'Failed to load state' });
 
     if (state.game.next_editor_fid == null && callerFid != null) {
-      await query`UPDATE games SET next_editor_fid = ${callerFid}::bigint, updated_at = NOW() WHERE id = ${gameId}::uuid AND next_editor_fid IS NULL`;
+      // Claim the turn: set next_editor_fid AND a new expiry timestamp
+      await query`
+        UPDATE games 
+        SET next_editor_fid = ${callerFid}::bigint, 
+            expiry_timestamp = NOW() + interval '30 minutes',
+            updated_at = NOW() 
+        WHERE id = ${gameId}::uuid AND next_editor_fid IS NULL
+      `;
       state = await fetchGameState(gameId);
     }
 
     if (
       state.game.status === 'active' &&
+      state.game.next_editor_fid != null && // Only check expiry if someone is editing
       state.game.expiry_timestamp &&
       new Date(state.game.expiry_timestamp).getTime() < Date.now()
     ) {
-      // Release the turn if expired
+      // Release the turn if expired. 
+      // IMPORTANT: Do NOT set expiry_timestamp to NULL, as that violates the check constraint.
+      // Leaving it as the old timestamp is fine (it's still "expired").
       await query`
         UPDATE games
         SET next_editor_fid = NULL,
-            expiry_timestamp = NULL,
             updated_at = NOW()
         WHERE id = ${gameId}::uuid
       `;
