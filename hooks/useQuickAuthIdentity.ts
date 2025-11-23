@@ -46,6 +46,8 @@ export function useQuickAuthIdentity() {
         // Set globals for existing code
         (window as any).QUICKAUTH_TOKEN = jwt;
         (window as any).CURRENT_FID = sub;
+        // IMPORTANT: Also save to localStorage so GamePrototype can read it
+        localStorage.setItem('chaincanvas_auth_token', jwt);
         // Notify listeners (GamePrototype listens for this)
         window.dispatchEvent(new Event('quickauth-ready'));
       } catch (e: any) {
