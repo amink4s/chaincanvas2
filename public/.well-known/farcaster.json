@@ -1,40 +1,69 @@
 {
-    "accountAssociation": {
-      "header": "eyJmaWQiOjQ3NzEyNiwidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweDIxOGE5YjU4QjkyOWRCRDBEOTEzMkFENEZlYzBkRkRCNzkyNDUyYkQifQ",
-      "payload": "eyJkb21haW4iOiJjaGFpbmNhbnZhcy14aS52ZXJjZWwuYXBwIn0",
-      "signature": "R1bkixj1DdZfQni40ysl0kLZ3ai+u/c46dZ1Yp6LQqAIgCIAwc0C+PDFpAHE5Z4HOaagpc5D71ocIqWw4ufUpBw="
-    },
-    "miniapp": {
-        "version": "1",
-        "name": "Chain Reaction",
-        "description": "Collaborative daily image mutation game",
-        "iconUrl": "https://chaincanvas-xi.vercel.app/icon.png",
-        "homeUrl": "https://chaincanvas-xi.vercel.app/",
-        "canonicalDomain": "chaincanvas-xi.vercel.app",
-        "splashImageUrl": "https://chaincanvas-xi.vercel.app/splash.png",
-        "heroImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
-        "splashBackgroundColor": "#0F172A",
-        "buttonTitle": "Chain Reaction",
-        "imageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
-        "requiredCapabilities": ["actions.ready", "actions.signIn"],
-        "requiredChains": ["eip155:8453"],
-        "tags": ["art", "game", "collaboration"],
-        "primaryCategory": "games",
-        "subtitle": "Collaborative daily image mutation game",
-        "ogDescription":"Collaborative daily image mutation game",
-        "ogImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
-        "ogTitle": "Chain Reaction",
-        "webhookUrl": "https://chaincanvas-xi.vercel.app/api/webhook"
-      },
-    "frame": {
-      "version": "1",
-      "name": "Chain Canvas",
-      "iconUrl": "https://chaincanvas-xi.vercel.app/icon.png",
-      "homeUrl": "https://chaincanvas-xi.vercel.app",
-      "imageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
-      "buttonTitle": "Chain Canvas",
-      "splashImageUrl": "https://chaincanvas-xi.vercel.app/splash.png",
-      "splashBackgroundColor": "#eeccff",
-      "webhookUrl": "https://chaincanvas-xi.vercel.app/api/webhook"
-    }
+  "accountAssociation": {
+    "header": "eyJmaWQiOjQ3NzEyNiwidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweDIxOGE5YjU4QjkyOWRCRDBEOTEzMkFENEZlYzBkRkRCNzkyNDUyYkQifQ",
+    "payload": "eyJkb21haW4iOiJjaGFpbmNhbnZhcy14aS52ZXJjZWwuYXBwIn0",
+    "signature": "R1bkixj1DdZfQni40ysl0kLZ3ai+u/c46dZ1Yp6LQqAIgCIAwc0C+PDFpAHE5Z4HOaagpc5D71ocIqWw4ufUpBw="
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "Chain Reaction",
+    "description": "Collaborative daily image mutation game",
+    "iconUrl": "https://chaincanvas-xi.vercel.app/icon.png",
+    "homeUrl": "https://chaincanvas-xi.vercel.app/",
+    "canonicalDomain": "chaincanvas-xi.vercel.app",
+    "splashImageUrl": "https://chaincanvas-xi.vercel.app/splash.png",
+    "heroImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
+    "splashBackgroundColor": "#000000",
+    "buttonTitle": "Chain Reaction",
+    "imageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
+    "requiredCapabilities": [
+      "actions.ready",
+      "actions.signIn"
+    ],
+    "requiredChains": [
+      "eip155:8453"
+    ],
+    "tags": [
+      "art",
+      "game",
+      "collaboration"
+    ],
+    "primaryCategory": "games",
+    "subtitle": "Collaborative daily image mutation game",
+    "ogDescription": "Collaborative daily image mutation game",
+    "ogImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
+    "ogTitle": "Chain Reaction",
+    "webhookUrl": "https://chaincanvas-xi.vercel.app/api/webhook"
+  },
+  "frame": {
+    "version": "1",
+    "name": "Chain Reaction",
+    "description": "Collaborative daily image mutation game",
+    "iconUrl": "https://chaincanvas-xi.vercel.app/icon.png",
+    "homeUrl": "https://chaincanvas-xi.vercel.app/",
+    "canonicalDomain": "chaincanvas-xi.vercel.app",
+    "splashImageUrl": "https://chaincanvas-xi.vercel.app/splash.png",
+    "heroImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
+    "splashBackgroundColor": "#000000",
+    "buttonTitle": "Chain Reaction",
+    "imageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
+    "requiredCapabilities": [
+      "actions.ready",
+      "actions.signIn"
+    ],
+    "requiredChains": [
+      "eip155:8453"
+    ],
+    "tags": [
+      "art",
+      "game",
+      "collaboration"
+    ],
+    "primaryCategory": "games",
+    "subtitle": "Collaborative daily image mutation game",
+    "ogDescription": "Collaborative daily image mutation game",
+    "ogImageUrl": "https://chaincanvas-xi.vercel.app/opengraph.png",
+    "ogTitle": "Chain Reaction",
+    "webhookUrl": "https://chaincanvas-xi.vercel.app/api/webhook"
   }
+}
