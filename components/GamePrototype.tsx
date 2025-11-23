@@ -177,8 +177,8 @@ const GamePrototype: React.FC = () => {
     }
   };
 
-  const pinToIpfs = async () => {
-    if (!lastDataUrl || !serverState) return;
+  const pinToIpfs = async (): Promise<{ cid: string; url: string } | null> => {
+    if (!lastDataUrl || !serverState) return null;
     setPinning(true);
     setIpfsStatus(null);
     try {
@@ -195,13 +195,16 @@ const GamePrototype: React.FC = () => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         setIpfsStatus(`Pin failed: ${data?.error || resp.status}`);
+        return null;
       } else {
         setIpfsStatus(`Pinned: ${data.ipfsCid}`);
         setLastPinnedUrl(data.gatewayUrl || null);
         setLastPinnedCid(data.ipfsCid || null);
+        return { cid: data.ipfsCid, url: data.gatewayUrl };
       }
     } catch (e: any) {
       setIpfsStatus('Pin network error: ' + (e?.message || String(e)));
+      return null;
     } finally {
       setPinning(false);
     }
@@ -216,6 +219,18 @@ const GamePrototype: React.FC = () => {
   const confirmTurn = async () => {
     if (!selectedNextUser || !lastDataUrl || !serverState || !isMyTurn) return;
     setLastPromptForCast(inputPrompt);
+
+    // Auto-pin if not already pinned
+    let cid = lastPinnedCid;
+    if (!cid) {
+      const pinResult = await pinToIpfs();
+      if (!pinResult) {
+        setErrorMsg('Failed to pin image to IPFS. Cannot submit.');
+        return;
+      }
+      cid = pinResult.cid;
+    }
+
     const token = getAuthToken();
     try {
       const resp = await fetch('/api/submit-turn', {
@@ -229,7 +244,7 @@ const GamePrototype: React.FC = () => {
           passedToFid: selectedNextUser.fid,
           prompt: inputPrompt,
           imageDataUrl: lastDataUrl,
-          ipfsCid: lastPinnedCid
+          ipfsCid: cid
         })
       });
       const text = await resp.text();
@@ -382,14 +397,7 @@ const GamePrototype: React.FC = () => {
               )}
               {lastDataUrl && !errorMsg && (
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={pinToIpfs}
-                    disabled={pinning}
-                    className="text-xs flex items-center gap-2 px-3 py-2 rounded-md bg-slate-800 border border-slate-700 hover:border-indigo-500/60 text-slate-300 disabled:opacity-50"
-                  >
-                    <CloudUpload className="w-4 h-4" />
-                    {pinning ? 'Pinning...' : 'Pin to IPFS'}
-                  </button>
+                  {/* Pinning is now automatic on submit, but we can show status if it happened */}
                   {ipfsStatus && (
                     <span className="text-[10px] text-indigo-300">
                       {ipfsStatus}
@@ -474,10 +482,14 @@ const GamePrototype: React.FC = () => {
             {/* Step 3 */}
             <button
               onClick={confirmTurn}
-              disabled={!selectedNextUser || !lastDataUrl || !inputPrompt.trim()}
+              disabled={!selectedNextUser || !lastDataUrl || !inputPrompt.trim() || pinning}
               className="w-full bg-white text-black font-bold py-4 rounded-xl shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)] hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
-              Finalize & Pass Turn <Send className="w-4 h-4" />
+              {pinning ? (
+                <>Pinning to IPFS... <Loader2 className="w-4 h-4 animate-spin" /></>
+              ) : (
+                <>Finalize & Pass Turn <Send className="w-4 h-4" /></>
+              )}
             </button>
           </div>
         ) : (

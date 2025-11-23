@@ -16,9 +16,9 @@ export default async function handler(req, res) {
     const body = req.body || {};
     const { gameId, passedToFid, prompt, imageDataUrl, ipfsCid } = body;
 
-    if (!gameId || !passedToFid || !prompt || !imageDataUrl) {
+    if (!gameId || !passedToFid || !prompt || !imageDataUrl || !ipfsCid) {
       return respond(res, 400, {
-        error: 'Missing required fields (gameId, passedToFid, prompt, imageDataUrl)'
+        error: 'Missing required fields (gameId, passedToFid, prompt, imageDataUrl, ipfsCid)'
       });
     }
 

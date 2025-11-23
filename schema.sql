@@ -41,6 +41,15 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);
 CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users (last_seen_at);
 
+-- Daily Seeds (Configuration for each day's game) ----------------------------
+
+CREATE TABLE IF NOT EXISTS daily_seeds (
+  day_date           DATE PRIMARY KEY,
+  image_url          TEXT NOT NULL,
+  prompt             TEXT NOT NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Games (one per day or per session) -----------------------------------------
 
 CREATE TABLE IF NOT EXISTS games (

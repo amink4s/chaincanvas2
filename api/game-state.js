@@ -17,9 +17,9 @@ export default async function handler(req, res) {
     }
 
     const gameId = await getOrCreateTodayGame(
+      callerFid,
       DEFAULT_SEED_IMAGE,
-      DEFAULT_SEED_PROMPT,
-      callerFid
+      DEFAULT_SEED_PROMPT
     );
 
     let state = await fetchGameState(gameId);

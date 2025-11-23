@@ -31,10 +31,17 @@ export async function query<T = any>(
   }
 }
 
+export async function getDailySeed(dateStr: string) {
+  const rows = await query<{ image_url: string; prompt: string }>`
+    SELECT image_url, prompt FROM daily_seeds WHERE day_date = ${dateStr} LIMIT 1
+  `;
+  return rows[0] || null;
+}
+
 export async function getOrCreateTodayGame(
-  seedImageUrl: string,
-  seedPrompt: string,
-  initialEditorFid: number | null
+  initialEditorFid: number | null,
+  defaultSeedImage: string,
+  defaultSeedPrompt: string
 ) {
   const today = new Date().toISOString().slice(0, 10);
   const existing = await query<{ id: string }>`
@@ -42,9 +49,13 @@ export async function getOrCreateTodayGame(
   `;
   if (existing.length) return existing[0].id;
 
+  const seed = await getDailySeed(today);
+  const finalImage = seed?.image_url || defaultSeedImage;
+  const finalPrompt = seed?.prompt || defaultSeedPrompt;
+
   const inserted = await query<{ id: string }>`
     INSERT INTO games (day_date, seed_image_url, seed_prompt, status, current_turn, max_turns, expiry_timestamp, next_editor_fid)
-    VALUES (${today}, ${seedImageUrl}, ${seedPrompt}, 'active', 1, 10, NOW() + interval '30 minutes', ${initialEditorFid})
+    VALUES (${today}, ${finalImage}, ${finalPrompt}, 'active', 1, 10, NOW() + interval '30 minutes', ${initialEditorFid})
     RETURNING id
   `;
   return inserted[0].id;
@@ -79,8 +90,9 @@ export async function insertTurnAndPass(params: {
   imageUrl: string;
   veniceRequest?: any;
   veniceResponse?: any;
+  ipfsCid?: string;
 }) {
-  const { gameId, editorFid, passedToFid, prompt, imageUrl, veniceRequest, veniceResponse } = params;
+  const { gameId, editorFid, passedToFid, prompt, imageUrl, veniceRequest, veniceResponse, ipfsCid } = params;
   const g = await query<any>`
     SELECT current_turn, max_turns FROM games WHERE id = ${gameId} LIMIT 1
   `;
@@ -90,13 +102,14 @@ export async function insertTurnAndPass(params: {
 
   await query`
     INSERT INTO turns (game_id, turn_number, editor_fid, passed_to_fid, prompt_text, image_url,
-                       venice_request_json, venice_response_json, state, created_at)
+                       venice_request_json, venice_response_json, state, created_at, ipfs_cid)
     VALUES (
       ${gameId}, ${current_turn}, ${editorFid}, ${passedToFid},
       ${prompt}, ${imageUrl},
       ${veniceRequest ? JSON.stringify(veniceRequest) : null},
       ${veniceResponse ? JSON.stringify(veniceResponse) : null},
-      'finalized', NOW()
+      'finalized', NOW(),
+      ${ipfsCid || null}
     )
   `;
 
