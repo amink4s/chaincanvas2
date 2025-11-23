@@ -1,37 +1,21 @@
-'use client';
-
 import React, { useState, useEffect, useRef } from 'react';
-import sdk from '@farcaster/miniapp-sdk';
 import {
-  Loader2,
-  RefreshCw,
-  Send,
-  Search as SearchIcon,
-  X,
   Timer,
-  Bug
+  Send,
+  RefreshCw,
+  Camera,
+  Loader2,
+  Lock,
+  Bug,
+  CloudUpload,
+  Search as SearchIcon,
+  X
 } from 'lucide-react';
+import { editImage, getLastVeniceError, getLastVeniceDebug } from '../services/venice';
+import { searchFarcasterUsers, debounce, SearchUser } from '../services/userSearch';
+import { sdk } from '@farcaster/miniapp-sdk';
 
 const MINI_APP_URL = 'https://chaincanvas-xi.vercel.app/';
-
-// Simple debounce implementation
-function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
-}
-
-interface SearchUser {
-  fid: number;
-  username: string;
-  displayName?: string;
-  pfpUrl?: string;
-}
 
 interface ServerState {
   gameId: string;
@@ -40,77 +24,42 @@ interface ServerState {
   callerFid: number | null;
 }
 
-// Helper to get my FID from context or fallback
-function getMyFidFromContext(callerFid: number | null): number | null {
-  // In a real app, we trust the server's auth context
-  return callerFid;
+function getAuthToken(): string | null {
+  return (window as any).QUICKAUTH_TOKEN || null;
 }
 
-async function searchFarcasterUsers(q: string): Promise<SearchUser[]> {
-  try {
-    const res = await fetch(`/api/search-users?q=${encodeURIComponent(q)}`);
-    if (!res.ok) return [];
-    return await res.json();
-  } catch {
-    return [];
-  }
+function getMyFidFromContext(serverCallerFid: number | null): number | null {
+  if (typeof serverCallerFid === 'number') return serverCallerFid;
+  const fallback = (window as any).CURRENT_FID;
+  if (fallback == null) return null;
+  const n = Number(fallback);
+  return Number.isFinite(n) ? n : null;
 }
 
-async function editImage(prompt: string, imageUrl: string, useVenice: boolean): Promise<string> {
-  const res = await fetch('/api/edit-image', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, imageUrl, useVenice })
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Edit failed');
-  return data.dataUrl;
-}
-
-// Helper to get auth token from localStorage (set by QuickAuth)
-function getAuthToken() {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('chaincanvas_auth_token');
-}
-
-// Debug helpers
-function getLastVeniceDebug() {
-  if (typeof window === 'undefined') return null;
-  const s = localStorage.getItem('last_venice_debug');
-  return s ? JSON.parse(s) : null;
-}
-function getLastVeniceError() {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('last_venice_error');
-}
-
-export default function GamePrototype() {
+const GamePrototype: React.FC = () => {
   const [serverState, setServerState] = useState<ServerState | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [inputPrompt, setInputPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [lastDataUrl, setLastDataUrl] = useState<string | null>(null);
-
-  const [nextEditorQuery, setNextEditorQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [selectedNextUser, setSelectedNextUser] = useState<SearchUser | null>(null);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [debugMeta, setDebugMeta] = useState<any>(null);
-
-  const [pinning, setPinning] = useState(false);
+  const [lastDataUrl, setLastDataUrl] = useState<string | null>(null);
   const [ipfsStatus, setIpfsStatus] = useState<string | null>(null);
+  const [pinning, setPinning] = useState(false);
   const [lastPinnedUrl, setLastPinnedUrl] = useState<string | null>(null);
   const [lastPinnedCid, setLastPinnedCid] = useState<string | null>(null);
-
+  const [lastPromptForCast, setLastPromptForCast] = useState<string>('');
   const [showShareModal, setShowShareModal] = useState(false);
-  const [lastPromptForCast, setLastPromptForCast] = useState('');
+
+  const [nextEditorQuery, setNextEditorQuery] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
+  const [selectedNextUser, setSelectedNextUser] = useState<SearchUser | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   const debouncedSearch = useRef(
     debounce(async (q: string) => {
@@ -203,9 +152,6 @@ export default function GamePrototype() {
     serverState?.game?.next_editor_fid != null
       ? (Number(serverState.game.next_editor_fid) || null)
       : null;
-
-  // Debug logging
-  console.log('Turn check:', { myFid, nextFid, callerFid: serverState?.callerFid });
 
   const isMyTurn = Boolean(myFid != null && nextFid != null && myFid === nextFid);
 
@@ -333,15 +279,8 @@ export default function GamePrototype() {
     const text = buildCastText();
     let embeds: [string] | [string, string] | undefined;
 
-    if (imageUrl) {
-      // Use the dynamic share endpoint to ensure correct meta tags for the embed
-      const shareUrl = `${MINI_APP_URL}api/share?img=${encodeURIComponent(imageUrl)}&prompt=${encodeURIComponent(lastPromptForCast)}`;
-      // Send ONLY the share URL. It contains the App/Frame metadata, so it will render as the App card 
-      // but with the specific image we want. Sending both might cause duplicate or conflicting embeds.
-      embeds = [shareUrl];
-    } else {
-      embeds = [MINI_APP_URL];
-    }
+    if (imageUrl) embeds = [imageUrl, MINI_APP_URL];
+    else embeds = [MINI_APP_URL];
 
     try {
       await sdk.actions.composeCast?.({ text, embeds });
@@ -562,49 +501,56 @@ export default function GamePrototype() {
             </button>
           </div>
         ) : (
-          <div className="text-center p-8 bg-slate-800/50 rounded-xl border border-slate-700/50">
-            {serverState?.game?.next_editor_fid ? (
-              <>
-                <p className="text-slate-400 mb-2">Waiting for next editor</p>
-                <p className="text-xl font-bold text-white">
-                  fid: {serverState.game.next_editor_fid}
-                </p>
-              </>
-            ) : (
-              <p className="text-slate-400">Game finished or waiting to start</p>
-            )}
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center space-y-4 bg-slate-900/50 rounded-xl border border-slate-800 border-dashed">
+            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
+              <Lock className="w-8 h-8 text-slate-500" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">Not Your Turn</h3>
+              <p className="text-slate-400 text-sm max-w-[220px] mx-auto mt-2">
+                Waiting for the current editor to finish. (Server-controlled)
+              </p>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Share Modal */}
-      {showShareModal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+      {showShareModal && selectedNextUser && (
+        <div className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 space-y-6">
             <div className="text-center space-y-2">
-              <div className="w-12 h-12 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Send className="w-6 h-6" />
+              <div className="w-12 h-12 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mx-auto">
+                <Camera className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-white">Turn Submitted!</h3>
-              <p className="text-slate-400 text-sm">
-                You've successfully mutated the image. Now notify the next player.
+              <h3 className="text-xl font-bold text-white">Turn Complete!</h3>
+              <p className="text-slate-400 text-sm">Compose a cast to notify @{selectedNextUser.username}.</p>
+            </div>
+            <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+              <p className="text-slate-300 text-sm font-mono whitespace-pre-line">
+                {`I just mutated the daily image with "${lastPromptForCast}".\n\nYour turn @${selectedNextUser.username}! You have 30 mins. ⏱️\n${MINI_APP_URL}`}
               </p>
+              <div className="mt-3 rounded-md overflow-hidden h-32 w-full bg-black">
+                <img
+                  src={lastDataUrl || currentImage}
+                  className="w-full h-full object-cover opacity-80"
+                  alt="Turn Result"
+                />
+              </div>
+              {lastPinnedUrl && (
+                <div className="mt-2 text-[11px] text-slate-400">
+                  Image embed: {lastPinnedUrl}
+                </div>
+              )}
             </div>
-
-            <div className="bg-slate-800 rounded-lg p-3 text-xs text-slate-300 font-mono break-all">
-              {buildCastText()}
-            </div>
-
             <button
               onClick={composeCast}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+              className="w-full bg-[#7C65C1] hover:bg-[#6952A3] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
             >
-              Compose Cast <Send className="w-4 h-4" />
+              Open Composer
             </button>
-
             <button
               onClick={() => setShowShareModal(false)}
-              className="w-full text-slate-500 hover:text-slate-300 text-sm py-2"
+              className="w-full text-slate-500 text-sm py-2 hover:text-slate-300"
             >
               Close
             </button>
@@ -613,4 +559,6 @@ export default function GamePrototype() {
       )}
     </div>
   );
-}
+};
+
+export default GamePrototype;
