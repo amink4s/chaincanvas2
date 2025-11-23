@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     await assertTurnPermission(gameId, callerFid);
 
     // Use IPFS gateway URL if available, otherwise fallback to data URL
-    const finalImageUrl = ipfsCid ? `https://ipfs.io/ipfs/${ipfsCid}` : imageDataUrl;
+    const finalImageUrl = ipfsCid ? `https://ipfs.io/ipfs/${ipfsCid}?filename=image.png` : imageDataUrl;
 
     await insertTurnAndPass({
       gameId,
