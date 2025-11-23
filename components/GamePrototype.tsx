@@ -322,7 +322,9 @@ export default function GamePrototype() {
     if (imageUrl) {
       // Use the dynamic share endpoint to ensure correct meta tags for the embed
       const shareUrl = `${MINI_APP_URL}api/share?img=${encodeURIComponent(imageUrl)}&prompt=${encodeURIComponent(lastPromptForCast)}`;
-      embeds = [shareUrl, MINI_APP_URL];
+      // Send ONLY the share URL. It contains the App/Frame metadata, so it will render as the App card 
+      // but with the specific image we want. Sending both might cause duplicate or conflicting embeds.
+      embeds = [shareUrl];
     } else {
       embeds = [MINI_APP_URL];
     }
