@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import sdk from '@farcaster/miniapp-sdk';
 import {
   Loader2,
@@ -11,9 +11,20 @@ import {
   Timer,
   Bug
 } from 'lucide-react';
-import { debounce } from 'lodash';
 
 const MINI_APP_URL = 'https://chaincanvas-xi.vercel.app/';
+
+// Simple debounce implementation
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+}
 
 interface SearchUser {
   fid: number;
