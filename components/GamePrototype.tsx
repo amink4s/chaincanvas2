@@ -281,7 +281,7 @@ const GamePrototype: React.FC = () => {
 
     if (imageUrl) {
       const shareUrl = `${MINI_APP_URL}api/share?img=${encodeURIComponent(imageUrl)}&prompt=${encodeURIComponent(lastPromptForCast)}`;
-      embeds = [shareUrl, MINI_APP_URL];
+      embeds = [shareUrl];
     } else embeds = [MINI_APP_URL];
 
     try {
