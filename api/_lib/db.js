@@ -102,9 +102,8 @@ export async function assertTurnPermission(gameId, fid) {
   if (!rows.length) throw new Error('Game not found');
   const { next_editor_fid, status, current_turn } = rows[0];
   if (status !== 'active') throw new Error('Game not active');
-  // Allow initial editor if next_editor_fid still null and on first turn
-  if (next_editor_fid == null && current_turn === 1) return;
-  if (next_editor_fid == null) throw new Error('No editor assigned');
+  // Allow anyone to submit if next_editor_fid is NULL (initial turn or expired turn)
+  if (next_editor_fid == null) return;
   if (String(next_editor_fid) !== String(fid)) throw new Error(`Not your turn (expected ${next_editor_fid}, got ${fid})`);
 }
 

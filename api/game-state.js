@@ -34,18 +34,7 @@ export default async function handler(req, res) {
     let state = await fetchGameState(gameId);
     if (!state) return respond(res, 500, { error: 'Failed to load state' });
 
-    if (state.game.next_editor_fid == null && callerFid != null) {
-      // Claim the turn: set next_editor_fid AND a new expiry timestamp
-      await query`
-        UPDATE games 
-        SET next_editor_fid = ${callerFid}::bigint, 
-            expiry_timestamp = NOW() + interval '30 minutes',
-            updated_at = NOW() 
-        WHERE id = ${gameId}::uuid AND next_editor_fid IS NULL
-      `;
-      state = await fetchGameState(gameId);
-    }
-
+    // Check if turn has expired and release it
     if (
       state.game.status === 'active' &&
       state.game.next_editor_fid != null && // Only check expiry if someone is editing
@@ -63,6 +52,10 @@ export default async function handler(req, res) {
       `;
       state = await fetchGameState(gameId);
     }
+
+    // REMOVED: Auto-claiming logic that was here before
+    // The turn should remain open (next_editor_fid = NULL) until someone actually submits.
+    // assertTurnPermission in submit-turn.js already allows anyone to submit when next_editor_fid is NULL.
 
     return respond(res, 200, {
       gameId,
