@@ -47,7 +47,10 @@ export async function getDailySeed(dateStr) {
 }
 
 export async function getOrCreateTodayGame(initialEditorFid, defaultSeedImage, defaultSeedPrompt) {
-  const today = new Date().toISOString().slice(0, 10);
+  // Reset at 6 AM UTC instead of midnight UTC
+  const now = new Date();
+  now.setUTCHours(now.getUTCHours() - 12); // Subtract 12 hours
+  const today = now.toISOString().slice(0, 10);
   const existing = await query`SELECT id FROM games WHERE day_date = ${today}::date LIMIT 1`;
   if (existing.length) return existing[0].id;
 

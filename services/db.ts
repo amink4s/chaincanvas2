@@ -43,7 +43,9 @@ export async function getOrCreateTodayGame(
   defaultSeedImage: string,
   defaultSeedPrompt: string
 ) {
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  now.setUTCHours(now.getUTCHours() - 12); // Subtract 12 hours
+  const today = now.toISOString().slice(0, 10);
   const existing = await query<{ id: string }>`
     SELECT id FROM games WHERE day_date = ${today} LIMIT 1
   `;
