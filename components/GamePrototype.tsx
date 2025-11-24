@@ -156,7 +156,7 @@ const GamePrototype: React.FC = () => {
             ? (Number(serverState.game.next_editor_fid) || null)
             : null;
 
-    const isMyTurn = Boolean(myFid != null && nextFid != null && myFid === nextFid);
+    const isMyTurn = Boolean(myFid != null && (nextFid == null || myFid === nextFid));
 
     const handleGenerate = async () => {
         if (!inputPrompt.trim() || isGenerating || !serverState || !isMyTurn) return;
