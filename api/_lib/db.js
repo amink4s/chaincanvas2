@@ -69,10 +69,28 @@ export async function getOrCreateTodayGame(initialEditorFid, defaultSeedImage, d
 }
 
 export async function fetchGameState(gameId) {
-  const gameRows = await query`SELECT * FROM games WHERE id = ${gameId}::uuid LIMIT 1`;
+  const gameRows = await query`
+    SELECT 
+      g.*,
+      u_next.username as next_editor_username,
+      u_next.display_name as next_editor_display_name,
+      u_next.pfp_url as next_editor_pfp_url
+    FROM games g
+    LEFT JOIN users u_next ON u_next.fid = g.next_editor_fid
+    WHERE g.id = ${gameId}::uuid 
+    LIMIT 1
+  `;
   if (!gameRows.length) return null;
   const turns = await query`
-    SELECT * FROM turns WHERE game_id = ${gameId}::uuid ORDER BY turn_number ASC
+    SELECT 
+      t.*,
+      u_editor.username as editor_username,
+      u_editor.display_name as editor_display_name,
+      u_editor.pfp_url as editor_pfp_url
+    FROM turns t
+    LEFT JOIN users u_editor ON u_editor.fid = t.editor_fid
+    WHERE t.game_id = ${gameId}::uuid 
+    ORDER BY t.turn_number ASC
   `;
   return { game: gameRows[0], turns };
 }

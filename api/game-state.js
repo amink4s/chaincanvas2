@@ -1,5 +1,6 @@
 import { getOrCreateTodayGame, fetchGameState, query, ensureUser } from './_lib/db.js';
 import { extractFidFromAuthHeader } from './_lib/auth.js';
+import { fetchNeynarProfiles } from './_lib/neynar.js';
 
 const DEFAULT_SEED_IMAGE = 'https://picsum.photos/id/28/800/800';
 const DEFAULT_SEED_PROMPT = 'A mysterious forest landscape';
@@ -12,8 +13,16 @@ export default async function handler(req, res) {
     }
 
     const callerFid = extractFidFromAuthHeader(req) || null;
+
+    // Fetch and store caller's profile if available
     if (callerFid) {
-      await ensureUser(callerFid);
+      const profiles = await fetchNeynarProfiles([callerFid]);
+      const profile = profiles.get(callerFid);
+      if (profile) {
+        await ensureUser(callerFid, profile.username, profile.displayName, profile.pfpUrl);
+      } else {
+        await ensureUser(callerFid);
+      }
     }
 
     const gameId = await getOrCreateTodayGame(

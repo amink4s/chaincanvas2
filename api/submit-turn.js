@@ -1,5 +1,6 @@
 import { fetchGameState, assertTurnPermission, insertTurnAndPass, ensureUser } from './_lib/db.js';
 import { extractFidFromAuthHeader } from './_lib/auth.js';
+import { fetchNeynarProfiles } from './_lib/neynar.js';
 
 export default async function handler(req, res) {
   try {
@@ -11,7 +12,6 @@ export default async function handler(req, res) {
     if (!callerFid) {
       return respond(res, 401, { error: 'Unauthorized (missing or invalid token)' });
     }
-    await ensureUser(callerFid);
 
     const body = req.body || {};
     const { gameId, passedToFid, prompt, imageDataUrl, ipfsCid } = body;
@@ -22,7 +22,22 @@ export default async function handler(req, res) {
       });
     }
 
-    await ensureUser(Number(passedToFid));
+    // Fetch and store profiles for both users
+    const profiles = await fetchNeynarProfiles([callerFid, Number(passedToFid)]);
+    const callerProfile = profiles.get(callerFid);
+    const passedToProfile = profiles.get(Number(passedToFid));
+
+    if (callerProfile) {
+      await ensureUser(callerFid, callerProfile.username, callerProfile.displayName, callerProfile.pfpUrl);
+    } else {
+      await ensureUser(callerFid);
+    }
+
+    if (passedToProfile) {
+      await ensureUser(Number(passedToFid), passedToProfile.username, passedToProfile.displayName, passedToProfile.pfpUrl);
+    } else {
+      await ensureUser(Number(passedToFid));
+    }
 
     await assertTurnPermission(gameId, callerFid);
 
